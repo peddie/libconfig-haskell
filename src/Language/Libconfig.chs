@@ -27,6 +27,7 @@ module Language.Libconfig (
   , Setting
   , SettingPtr
   , ConfigErr(..)
+  , ConfigType(..)
     -- * Construction and destruction
   , configInit
   , configDestroy
@@ -74,6 +75,17 @@ module Language.Libconfig (
   , configSettingRemoveElem
     -- * Miscellaneous
   , configSettingSetHook
+  , configSettingName
+  , configSettingParent
+  , configSettingIsRoot
+    -- * Config file type system
+  , configSettingType
+  , configSettingIsGroup
+  , configSettingIsList
+  , configSettingIsArray
+  , configSettingIsAggregate
+  , configSettingIsNumber
+  , configSettingIsScalar
     -- * Direct lookup by path
   , configLookup
   , configLookupFrom
@@ -381,6 +393,41 @@ instance Storable Config where
  { `ConfigPtr', `String', alloca- `CString' peek* } -> `Int' #}
 
 -- TODO(MP): Reproduce the libconfig macros
+
+configSettingType :: SettingPtr -> IO ConfigType
+configSettingType s = toConfigType . type'Setting <$> peek s
+
+configSettingIsGroup :: SettingPtr -> IO Bool
+configSettingIsGroup s = (== GroupType) <$> configSettingType s
+
+configSettingIsArray :: SettingPtr -> IO Bool
+configSettingIsArray s = (== ArrayType) <$> configSettingType s
+
+configSettingIsList :: SettingPtr -> IO Bool
+configSettingIsList s = (== ListType) <$> configSettingType s
+
+configSettingIsAggregate :: SettingPtr -> IO Bool
+configSettingIsAggregate s =
+  (`elem` [ListType, GroupType, ArrayType]) <$> configSettingType s
+
+configSettingIsNumber :: SettingPtr -> IO Bool
+configSettingIsNumber s =
+  (`elem` [IntType, Int64Type, FloatType]) <$> configSettingType s
+
+configSettingIsScalar :: SettingPtr -> IO Bool
+configSettingIsScalar s =
+  (`elem` [IntType, Int64Type, FloatType, BoolType, StringType]) <$>
+  configSettingType s
+
+configSettingName :: SettingPtr -> IO String
+configSettingName s = name'Setting <$> peek s >>= peekCString
+
+configSettingParent :: SettingPtr -> IO SettingPtr
+configSettingParent s = parent'Setting <$> peek s
+
+configSettingIsRoot :: SettingPtr -> IO Bool
+configSettingIsRoot s = (== nullPtr) . parent'Setting <$> peek s
+
 
 -- TODO(MP): Null pointer checks for functions that return a config
 -- setting, config, etc.
