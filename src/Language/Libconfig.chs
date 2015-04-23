@@ -274,19 +274,22 @@ instance Storable Config where
            {#set config_t->filenames #} p filenames'Config
            {#set config_t->num_filenames #} p num_filenames'Config
 
+withConfig :: Config -> (ConfigPtr -> IO b) -> IO b
+withConfig = with
+
 {- Resource management -}
 
 {#fun unsafe config_init as ^ { alloca- `Config' peek* } -> `()' #}
 
-{#fun unsafe config_destroy as ^ { with* `Config' } -> `()' #}
+{#fun unsafe config_destroy as ^ { withConfig* `Config' } -> `()' #}
 
 {- I/O -}
 
-{#fun unsafe config_read_file as ^ { with* `Config' peek*, `String' } -> `Int' #}
+{#fun unsafe config_read_file as ^ { withConfig* `Config' peek*, `String' } -> `Int' #}
 
-{#fun unsafe config_write_file as ^ { with* `Config' peek*, `String' } -> `Int' #}
+{#fun unsafe config_write_file as ^ { withConfig* `Config' peek*, `String' } -> `Int' #}
 
-{#fun unsafe config_read_string as ^ { with* `Config' peek*, `String' } -> `Int' #}
+{#fun unsafe config_read_string as ^ { withConfig* `Config' peek*, `String' } -> `Int' #}
 
 {- Unsafe getting -}
 
