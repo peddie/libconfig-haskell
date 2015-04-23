@@ -277,6 +277,9 @@ instance Storable Config where
 withConfig :: Config -> (ConfigPtr -> IO b) -> IO b
 withConfig = with
 
+withSetting :: Setting -> (SettingPtr -> IO b) -> IO b
+withSetting = with
+
 {- Resource management -}
 
 {#fun unsafe config_init as ^ { alloca- `Config' peek* } -> `()' #}
@@ -293,92 +296,92 @@ withConfig = with
 
 {- Unsafe getting -}
 
-{#fun unsafe config_setting_get_int as ^ { `SettingPtr' } -> `Int' #}
+{#fun unsafe config_setting_get_int as ^ { withSetting* `Setting' } -> `Int' #}
 
-{#fun unsafe config_setting_get_int64 as ^ { `SettingPtr' } -> `Int64' #}
+{#fun unsafe config_setting_get_int64 as ^ { withSetting* `Setting' } -> `Int64' #}
 
-{#fun unsafe config_setting_get_float as ^ { `SettingPtr' } -> `Double' #}
+{#fun unsafe config_setting_get_float as ^ { withSetting* `Setting' } -> `Double' #}
 
-{#fun unsafe config_setting_get_bool as ^ { `SettingPtr' } -> `Bool' toBool #}
+{#fun unsafe config_setting_get_bool as ^ { withSetting* `Setting' } -> `Bool' toBool #}
 
-{#fun unsafe config_setting_get_string as ^ { `SettingPtr' } -> `String' #}
+{#fun unsafe config_setting_get_string as ^ { withSetting* `Setting' } -> `String' #}
 
 {- Safe getting -}
 
 {#fun unsafe config_setting_lookup_int as ^
- { `SettingPtr', `String', alloca- `CInt' peek* } -> `Int' #}
+ { withSetting* `Setting', `String', alloca- `CInt' peek* } -> `Int' #}
 
 {#fun unsafe config_setting_lookup_int64 as ^
- { `SettingPtr', `String', alloca- `CLLong' peek* } -> `Int' #}
+ { withSetting* `Setting', `String', alloca- `CLLong' peek* } -> `Int' #}
 
 {#fun unsafe config_setting_lookup_float as ^
- { `SettingPtr', `String', alloca- `CDouble' peek* } -> `Int' #}
+ { withSetting* `Setting', `String', alloca- `CDouble' peek* } -> `Int' #}
 
 {#fun unsafe config_setting_lookup_bool as ^
- { `SettingPtr', `String', alloca- `CInt' peek* } -> `Int' #}
+ { withSetting* `Setting', `String', alloca- `CInt' peek* } -> `Int' #}
 
 {#fun unsafe config_setting_lookup_string as ^
- { `SettingPtr', `String', alloca- `CString' peek* } -> `Int' #}
+ { withSetting* `Setting', `String', alloca- `CString' peek* } -> `Int' #}
 
 {- SettingPtr -}
 
-{#fun unsafe config_setting_set_int as ^ { `SettingPtr', `Int' } -> `Int' #}
-{#fun unsafe config_setting_set_int64 as ^ { `SettingPtr', `Int64' } -> `Int' #}
-{#fun unsafe config_setting_set_float as ^ { `SettingPtr', `Double' } -> `Int' #}
-{#fun unsafe config_setting_set_bool as ^ { `SettingPtr', `Bool' } -> `Int' #}
-{#fun unsafe config_setting_set_string as ^ { `SettingPtr', `String' } -> `Int' #}
+{#fun unsafe config_setting_set_int as ^ { withSetting* `Setting', `Int' } -> `Int' #}
+{#fun unsafe config_setting_set_int64 as ^ { withSetting* `Setting', `Int64' } -> `Int' #}
+{#fun unsafe config_setting_set_float as ^ { withSetting* `Setting', `Double' } -> `Int' #}
+{#fun unsafe config_setting_set_bool as ^ { withSetting* `Setting', `Bool' } -> `Int' #}
+{#fun unsafe config_setting_set_string as ^ { withSetting* `Setting', `String' } -> `Int' #}
 
 {- Unsafe getting elements in collections -}
 
-{#fun unsafe config_setting_get_int_elem as ^ { `SettingPtr', `Int' } -> `Int' #}
-{#fun unsafe config_setting_get_int64_elem as ^ { `SettingPtr', `Int' } -> `Int64' #}
-{#fun unsafe config_setting_get_float_elem as ^ { `SettingPtr', `Int' } -> `Double' #}
-{#fun unsafe config_setting_get_bool_elem as ^ { `SettingPtr', `Int' } -> `Bool' toBool #}
-{#fun unsafe config_setting_get_string_elem as ^ { `SettingPtr', `Int' } -> `String' #}
+{#fun unsafe config_setting_get_int_elem as ^ { withSetting* `Setting', `Int' } -> `Int' #}
+{#fun unsafe config_setting_get_int64_elem as ^ { withSetting* `Setting', `Int' } -> `Int64' #}
+{#fun unsafe config_setting_get_float_elem as ^ { withSetting* `Setting', `Int' } -> `Double' #}
+{#fun unsafe config_setting_get_bool_elem as ^ { withSetting* `Setting', `Int' } -> `Bool' toBool #}
+{#fun unsafe config_setting_get_string_elem as ^ { withSetting* `Setting', `Int' } -> `String' #}
 
 {- Setting elements in collections -}
 
 {#fun unsafe config_setting_set_int_elem as ^
- { `SettingPtr', `Int', `Int' } -> `SettingPtr' #}
+ { withSetting* `Setting', `Int', `Int' } -> `Setting' peek* #}
 {#fun unsafe config_setting_set_int64_elem as ^
- { `SettingPtr', `Int', `Int64' } -> `SettingPtr' #}
+ { withSetting* `Setting', `Int', `Int64' } -> `Setting' peek* #}
 {#fun unsafe config_setting_set_float_elem as ^
- { `SettingPtr', `Int', `Double' } -> `SettingPtr' #}
+ { withSetting* `Setting', `Int', `Double' } -> `Setting' peek* #}
 {#fun unsafe config_setting_set_bool_elem as ^
- { `SettingPtr', `Int', `Bool' } -> `SettingPtr' #}
+ { withSetting* `Setting', `Int', `Bool' } -> `Setting' peek* #}
 {#fun unsafe config_setting_set_string_elem as ^
- { `SettingPtr', `Int', `String' } -> `SettingPtr' #}
+ { withSetting* `Setting', `Int', `String' } -> `Setting' peek* #}
 
 {- Collection management -}
 
-{#fun unsafe config_setting_index as ^ { `SettingPtr' } -> `Int' #}
+{#fun unsafe config_setting_index as ^ { withSetting* `Setting' } -> `Int' #}
 
-{#fun config_setting_length as ^ { `SettingPtr' } -> `Int' #}
+{#fun config_setting_length as ^ { withSetting* `Setting' } -> `Int' #}
 
-{#fun config_setting_get_elem as ^ { `SettingPtr', `CUInt' } -> `SettingPtr' #}
+{#fun config_setting_get_elem as ^ { withSetting* `Setting', `CUInt' } -> `Setting' peek* #}
 
-{#fun config_setting_get_member as ^ { `SettingPtr', `String' } -> `SettingPtr' #}
+{#fun config_setting_get_member as ^ { withSetting* `Setting', `String' } -> `Setting' peek* #}
 
 -- TODO(MP): pass back the modified parent as well?
 {#fun config_setting_add as ^
- { `SettingPtr', `String', fromConfigType `ConfigType' } -> `SettingPtr' #}
+ { withSetting* `Setting', `String', fromConfigType `ConfigType' } -> `Setting' peek* #}
 
 {#fun config_setting_remove as ^
- { `SettingPtr', `String' } -> `Int' #}
+ { withSetting* `Setting', `String' } -> `Int' #}
 
 {#fun config_setting_remove_elem as ^
- { `SettingPtr', `CUInt' } -> `Int' #}
+ { withSetting* `Setting', `CUInt' } -> `Int' #}
 
 {#fun config_setting_set_hook as ^
- { `SettingPtr', `Ptr ()' } -> `()' #}
+ { withSetting* `Setting', `Ptr ()' } -> `()' #}
 
 {- Path search -}
 
 {#fun config_lookup as ^
- { `ConfigPtr', `String' } -> `SettingPtr' #}
+ { `ConfigPtr', `String' } -> `Setting' peek* #}
 
 {#fun config_lookup_from as ^
- { `SettingPtr', `String' } -> `SettingPtr' #}
+ { withSetting* `Setting', `String' } -> `Setting' peek* #}
 
 {#fun config_lookup_int as ^
  { `ConfigPtr', `String', alloca- `CInt' peek* } -> `Int' #}
@@ -397,39 +400,38 @@ withConfig = with
 
 -- TODO(MP): Reproduce the libconfig macros
 
-configSettingType :: SettingPtr -> IO ConfigType
-configSettingType s = toConfigType . type'Setting <$> peek s
+configSettingType :: Setting -> ConfigType
+configSettingType = toConfigType . type'Setting
 
-configSettingIsGroup :: SettingPtr -> IO Bool
-configSettingIsGroup s = (== GroupType) <$> configSettingType s
+configSettingIsGroup :: Setting -> Bool
+configSettingIsGroup = (== GroupType) . configSettingType
 
-configSettingIsArray :: SettingPtr -> IO Bool
-configSettingIsArray s = (== ArrayType) <$> configSettingType s
+configSettingIsArray :: Setting -> Bool
+configSettingIsArray = (== ArrayType) . configSettingType
 
-configSettingIsList :: SettingPtr -> IO Bool
-configSettingIsList s = (== ListType) <$> configSettingType s
+configSettingIsList :: Setting -> Bool
+configSettingIsList = (== ListType) . configSettingType
 
-configSettingIsAggregate :: SettingPtr -> IO Bool
+configSettingIsAggregate :: Setting -> Bool
 configSettingIsAggregate s =
-  (`elem` [ListType, GroupType, ArrayType]) <$> configSettingType s
+  configSettingType s `elem` [ListType, GroupType, ArrayType]
 
-configSettingIsNumber :: SettingPtr -> IO Bool
+configSettingIsNumber :: Setting -> Bool
 configSettingIsNumber s =
-  (`elem` [IntType, Int64Type, FloatType]) <$> configSettingType s
+  configSettingType s `elem` [IntType, Int64Type, FloatType]
 
-configSettingIsScalar :: SettingPtr -> IO Bool
+configSettingIsScalar :: Setting -> Bool
 configSettingIsScalar s =
-  (`elem` [IntType, Int64Type, FloatType, BoolType, StringType]) <$>
-  configSettingType s
+  configSettingType s `elem` [IntType, Int64Type, FloatType, BoolType, StringType]
 
-configSettingName :: SettingPtr -> IO String
-configSettingName s = name'Setting <$> peek s >>= peekCString
+configSettingName :: Setting -> IO String
+configSettingName = peekCString . name'Setting
 
-configSettingParent :: SettingPtr -> IO SettingPtr
-configSettingParent s = parent'Setting <$> peek s
+configSettingParent :: Setting -> IO Setting
+configSettingParent = peek . parent'Setting
 
-configSettingIsRoot :: SettingPtr -> IO Bool
-configSettingIsRoot s = (== nullPtr) . parent'Setting <$> peek s
+configSettingIsRoot :: Setting -> Bool
+configSettingIsRoot s = parent'Setting s == nullPtr
 
 
 -- TODO(MP): Null pointer checks for functions that return a config
