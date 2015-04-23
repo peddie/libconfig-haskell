@@ -74,7 +74,6 @@ module Language.Libconfig (
   , configSettingRemove
   , configSettingRemoveElem
     -- * Miscellaneous
-  , configSettingSetHook
   , configSettingName
   , configSettingParent
   , configSettingIsRoot
@@ -370,33 +369,30 @@ withSetting = with
  { withSetting* `Setting', `String' } -> `Int' #}
 
 {#fun config_setting_remove_elem as ^
- { withSetting* `Setting', `CUInt' } -> `Int' #}
-
-{#fun config_setting_set_hook as ^
- { withSetting* `Setting', `Ptr ()' } -> `()' #}
+ { withSetting* `Setting', `Int' } -> `Int' #}
 
 {- Path search -}
 
 {#fun config_lookup as ^
- { `ConfigPtr', `String' } -> `Setting' peek* #}
+ { withConfig* `Config', `String' } -> `Setting' peek* #}
 
 {#fun config_lookup_from as ^
  { withSetting* `Setting', `String' } -> `Setting' peek* #}
 
 {#fun config_lookup_int as ^
- { `ConfigPtr', `String', alloca- `CInt' peek* } -> `Int' #}
+ { withConfig* `Config', `String', alloca- `CInt' peek* } -> `Int' #}
 
 {#fun config_lookup_int64 as ^
- { `ConfigPtr', `String', alloca- `CLLong' peek* } -> `Int' #}
+ { withConfig* `Config', `String', alloca- `CLLong' peek* } -> `Int' #}
 
 {#fun config_lookup_float as ^
- { `ConfigPtr', `String', alloca- `CDouble' peek* } -> `Int' #}
+ { withConfig* `Config', `String', alloca- `CDouble' peek* } -> `Int' #}
 
 {#fun config_lookup_bool as ^
- { `ConfigPtr', `String', alloca- `CInt' peek* } -> `Int' #}
+ { withConfig* `Config', `String', alloca- `CInt' peek* } -> `Int' #}
 
 {#fun config_lookup_string as ^
- { `ConfigPtr', `String', alloca- `CString' peek* } -> `Int' #}
+ { withConfig* `Config', `String', alloca- `CString' peek* } -> `Int' #}
 
 -- TODO(MP): Reproduce the libconfig macros
 
