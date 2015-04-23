@@ -72,8 +72,12 @@ script:
   - cabal check
   - cabal sdist
   - cabal haddock
+  # HLint doesn't know what to do with .chs files.
   # - hlint src --report
+
+  # No examples yet.
   # - hlint examples --report
+
   # The following scriptlet checks that the resulting source
   # distribution can be built & installed
   - export SRC_TGZ=$(cabal info . | awk '{print $2 ".tar.gz";exit}') ;
