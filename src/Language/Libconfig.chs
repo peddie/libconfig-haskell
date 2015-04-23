@@ -357,7 +357,7 @@ withSetting = with
 
 {#fun config_setting_length as ^ { withSetting* `Setting' } -> `Int' #}
 
-{#fun config_setting_get_elem as ^ { withSetting* `Setting', `CUInt' } -> `Setting' peek* #}
+{#fun config_setting_get_elem as ^ { withSetting* `Setting', id `CUInt' } -> `Setting' peek* #}
 
 {#fun config_setting_get_member as ^ { withSetting* `Setting', `String' } -> `Setting' peek* #}
 
@@ -369,7 +369,7 @@ withSetting = with
  { withSetting* `Setting', `String' } -> `Int' #}
 
 {#fun config_setting_remove_elem as ^
- { withSetting* `Setting', `Int' } -> `Int' #}
+ { withSetting* `Setting', id `CUInt' } -> `Int' #}
 
 {- Path search -}
 
