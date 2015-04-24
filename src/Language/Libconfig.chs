@@ -40,7 +40,8 @@ module Language.Libconfig (
   , configReadFile
   , configWriteFile
   , configReadString
-    -- * Safe (capable of returning an error) getting of primitives
+    -- * Safe (capable of returning an error) getting of primitive
+    -- settings from the parent setting, by name.
 
     -- | These Haskell functions return 'Nothing' if the lookup fails,
     -- there is a type mismatch, etc.
@@ -127,14 +128,15 @@ module Language.Libconfig (
   , configSettingParent
   , configSettingIsRoot
   , configRootSetting
+  , configSettingSourceLine
+  , configSettingSourceFile
+    -- ** Formatting
   , configGetDefaultFormat
   , configSetDefaultFormat
   , configSettingGetFormat
   , configSettingSetFormat
   , configGetTabWidth
   , configSetTabWidth
-  , configSettingSourceLine
-  , configSettingSourceFile
     -- * Error reporting
   , configErrorFile
   , configErrorText
