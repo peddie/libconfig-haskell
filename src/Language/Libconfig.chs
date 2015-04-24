@@ -21,6 +21,9 @@ C-vs.-Haskell impedance mismatches.
 -}
 
 module Language.Libconfig (
+  -- * Doctest example setup
+
+  -- $setup
   -- * Types
   Configuration
   , Setting
@@ -76,10 +79,10 @@ module Language.Libconfig (
   , configSettingGetStringElem
     -- * Setting of primitives within a collection
 
-    -- | These functions return the new 'Setting' whose value was
-    -- modified, inside a 'Maybe' to signal failure.  This 'Setting'
-    -- may be a pre-existing 'Setting' or it might get allocated
-    -- during this call (if you pass a negative index).
+    -- | In the event of an out-of-bounds index or a type mismatch,
+    -- these functions return 'Nothing'.  If the function succeeds,
+    -- the Setting that is returned will be either the same 'Setting'
+    -- that previously existed at that spot or a newly allocated one.
   , configSettingSetIntElem
   , configSettingSetInt64Elem
   , configSettingSetFloatElem
@@ -87,13 +90,8 @@ module Language.Libconfig (
   , configSettingSetStringElem
     -- * Direct lookup by path
 
-    -- | Some of these functions return tuples where the C counterpart
-    -- (obviously) does not, e.g. 'configLookupInt64'
-    -- vs. @config_lookup_int64@.  This happens because the C function
-    -- wants an pointer to something it can use as a result value;
-    -- 'configLookup' returns a tuple @(retval, result)@.  In this
-    -- case, @retval@ has type 'ConfigBool' (the same as it would be
-    -- in C) and @result@ has type 'Int64'.
+    -- | In the event of a name lookup failure or type mismatch, these
+    -- functions return 'Nothing'.
   , configLookup
   , configLookupFrom
   , configLookupInt
@@ -140,6 +138,16 @@ import Foreign.C
 import Control.Monad ((>=>))
 import Control.Applicative
 
+-- $setup
+--
+-- All the examples run on the included test file @test/test.conf@,
+-- which is provided in the
+-- <http://www.hyperrealm.com/libconfig/libconfig_manual.html#Configuration-Files libconfig manual>.
+--
+-- >>> conf <- configInit
+-- >>> configReadFile conf "test/test.conf"
+-- Just ()
+
 #include <libconfig.h>
 
 {#enum config_error_t as ConfigErr {underscoreToCase} deriving (Show, Eq) #}
@@ -170,8 +178,6 @@ data ConfigBool = ConfigFalse
                 deriving (Eq, Show, Read, Ord, Enum, Bounded)
 
 {#pointer *config_list_t as ConfigListPtr -> ConfigList #}
-
--- {#pointer *config_value_t as ConfigValuePtr -> ConfigValue #}
 
 {#pointer *config_setting_t as SettingPtr -> Setting' #}
 
@@ -401,15 +407,15 @@ checkTuple _               = Nothing
 
 {- Unsafe getting -}
 
-{#fun unsafe config_setting_get_int as ^ { `SettingPtr' } -> `Int' #}
+{#fun unsafe config_setting_get_int as ^ { getSetting `Setting' } -> `Int' #}
 
-{#fun unsafe config_setting_get_int64 as ^ { `SettingPtr' } -> `Int64' #}
+{#fun unsafe config_setting_get_int64 as ^ { getSetting `Setting' } -> `Int64' #}
 
-{#fun unsafe config_setting_get_float as ^ { `SettingPtr' } -> `Double' #}
+{#fun unsafe config_setting_get_float as ^ { getSetting `Setting' } -> `Double' #}
 
-{#fun unsafe config_setting_get_bool as ^ { `SettingPtr' } -> `Bool' toBool #}
+{#fun unsafe config_setting_get_bool as ^ { getSetting `Setting' } -> `Bool' toBool #}
 
-{#fun unsafe config_setting_get_string as ^ { `SettingPtr' } -> `String' #}
+{#fun unsafe config_setting_get_string as ^ { getSetting `Setting' } -> `String' #}
 
 {- Safe getting -}
 
@@ -439,26 +445,26 @@ configSettingLookupBool s = fmap checkTuple . configSettingLookupBool' s
 configSettingLookupString :: Setting -> String -> IO (Maybe String)
 configSettingLookupString s = fmap checkTuple . configSettingLookupString' s
 
-{- SettingPtr -}
+{- Setting values -}
 
 {#fun unsafe config_setting_set_int as ^
- { `SettingPtr', `Int' } -> `Maybe ()' checkBool #}
+ { getSetting `Setting', `Int' } -> `Maybe ()' checkBool #}
 {#fun unsafe config_setting_set_int64 as ^
- { `SettingPtr', `Int64' } -> `Maybe ()' checkBool #}
+ { getSetting `Setting', `Int64' } -> `Maybe ()' checkBool #}
 {#fun unsafe config_setting_set_float as ^
- { `SettingPtr', `Double' } -> `Maybe ()' checkBool #}
+ { getSetting `Setting', `Double' } -> `Maybe ()' checkBool #}
 {#fun unsafe config_setting_set_bool as ^
- { `SettingPtr', `Bool' } -> `Maybe ()' checkBool #}
+ { getSetting `Setting', `Bool' } -> `Maybe ()' checkBool #}
 {#fun unsafe config_setting_set_string as ^
- { `SettingPtr', `String' } -> `Maybe ()' checkBool #}
+ { getSetting `Setting', `String' } -> `Maybe ()' checkBool #}
 
 {- Unsafe getting elements in collections -}
 
-{#fun unsafe config_setting_get_int_elem as ^ { `SettingPtr', `Int' } -> `Int' #}
-{#fun unsafe config_setting_get_int64_elem as ^ { `SettingPtr', `Int' } -> `Int64' #}
-{#fun unsafe config_setting_get_float_elem as ^ { `SettingPtr', `Int' } -> `Double' #}
-{#fun unsafe config_setting_get_bool_elem as ^ { `SettingPtr', `Int' } -> `Bool' toBool #}
-{#fun unsafe config_setting_get_string_elem as ^ { `SettingPtr', `Int' } -> `String' #}
+{#fun unsafe config_setting_get_int_elem as ^ { getSetting `Setting', `Int' } -> `Int' #}
+{#fun unsafe config_setting_get_int64_elem as ^ { getSetting `Setting', `Int' } -> `Int64' #}
+{#fun unsafe config_setting_get_float_elem as ^ { getSetting `Setting', `Int' } -> `Double' #}
+{#fun unsafe config_setting_get_bool_elem as ^ { getSetting `Setting', `Int' } -> `Bool' toBool #}
+{#fun unsafe config_setting_get_string_elem as ^ { getSetting `Setting', `Int' } -> `String' #}
 
 {- Setting elements in collections -}
 
@@ -518,9 +524,18 @@ configSettingLookupString s = fmap checkTuple . configSettingLookupString' s
 
 {- Path search -}
 
+-- |
+-- >>> Just app <- configLookup conf "application"
+-- >>> configSettingName app
+-- Just "application"
 {#fun config_lookup as ^
  { withConfiguration* `Configuration', `String' } -> `Maybe Setting' checkSetting #}
 
+-- |
+-- >>> Just app <- configLookup conf "application"
+-- >>> Just list <- configLookupFrom app "list"
+-- >>> configSettingName list
+-- Just "list"
 {#fun config_lookup_from as ^
  { getSetting `Setting', `String' } -> `Maybe Setting' checkSetting #}
 
@@ -544,14 +559,34 @@ configSettingLookupString s = fmap checkTuple . configSettingLookupString' s
  { withConfiguration* `Configuration', `String', alloca- `String' peekString* }
    -> `ConfigBool' asBool #}
 
+-- |
+-- >>> configLookupInt conf "application.window.size.w"
+-- Just 640
 configLookupInt :: Configuration -> String -> IO (Maybe Int)
 configLookupInt c = fmap checkTuple . configLookupInt' c
+
+-- |
+-- >>> configLookupInt64 conf "application.misc.bigint"
+-- Just 9223372036854775807
 configLookupInt64 :: Configuration -> String -> IO (Maybe Int64)
 configLookupInt64 c = fmap checkTuple . configLookupInt64' c
+
+-- |
+-- >>> configLookupFloat conf "application.misc.pi"
+-- Just 3.141592654
 configLookupFloat :: Configuration -> String -> IO (Maybe Double)
 configLookupFloat c = fmap checkTuple . configLookupFloat' c
+
+-- |
+-- >>> configLookupBool conf "application.list.[0].[2]"
+-- Just True
 configLookupBool :: Configuration -> String -> IO (Maybe Bool)
 configLookupBool c = fmap checkTuple . configLookupBool' c
+
+
+-- |
+-- >>> configLookupString conf "application.window.title"
+-- Just "My Application"
 configLookupString :: Configuration -> String -> IO (Maybe String)
 configLookupString c = fmap checkTuple . configLookupString' c
 
@@ -580,8 +615,12 @@ configSettingIsScalar =
   fmap (`elem` [IntType, Int64Type, FloatType, BoolType, StringType]) .
   configSettingType
 
-configSettingName :: Setting -> IO String
-configSettingName (Setting s) = peek s >>= peekCString . name'Setting
+configSettingName :: Setting -> IO (Maybe String)
+configSettingName (Setting sp) = do
+  s <- peek sp
+  if (name'Setting s == nullPtr)
+    then return Nothing
+    else Just <$> peekCString (name'Setting s)
 
 configSettingParent :: Setting -> IO (Maybe Setting)
 configSettingParent = fmap (checkSetting . parent'Setting) . peek . getSetting
