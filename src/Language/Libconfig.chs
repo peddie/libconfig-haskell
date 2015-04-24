@@ -14,7 +14,7 @@ Portability :  GHC
 Low-level FFI bindings to the <http://www.hyperrealm.com/libconfig/ libconfig>
 configuration file library.  Please see the
 <http://www.hyperrealm.com/libconfig/libconfig_manual.html libconfig manual>
-for documentation on what the various functions do functionally; the
+for documentation on what the various functions actually do; the
 documentation in this module is only to do with FFI details and
 C-vs.-Haskell impedance mismatches.
 
@@ -22,49 +22,85 @@ C-vs.-Haskell impedance mismatches.
 
 module Language.Libconfig (
   -- * Types
-  Config
-  , ConfigPtr
+  Configuration
   , Setting
-  , SettingPtr
   , ConfigErr(..)
   , ConfigType(..)
-    -- * Construction and destruction
+  , ConfigBool(..)
+  , ConfigFormat(..)
+    -- * Resource management
   , configInit
-  , configDestroy
     -- * Config I/O
   , configReadFile
   , configWriteFile
   , configReadString
     -- * Safe (capable of returning an error) getting of primitives
+
+    -- | These Haskell functions return 'Nothing' if the lookup fails,
+    -- there is a type mismatch, etc.
   , configSettingLookupInt
   , configSettingLookupInt64
   , configSettingLookupFloat
   , configSettingLookupBool
   , configSettingLookupString
     -- * Unsafe getting of primitives
+
+    -- |
+    -- These functions are sketchy if used directly, because there is
+    -- no way to distinguish between a successful result and a
+    -- failure.
   , configSettingGetInt
   , configSettingGetInt64
   , configSettingGetFloat
   , configSettingGetBool
   , configSettingGetString
     -- * Setting of primitives
+
+    -- | These functions return a value of type 'Maybe ()', indicating
+    -- whether the action was successful.  (It may fail if, for
+    -- example, there is a setting type mismatch.)
   , configSettingSetInt
   , configSettingSetInt64
   , configSettingSetFloat
   , configSettingSetBool
   , configSettingSetString
     -- * Unsafe getting of primitives from a collection
+
+    -- | These functions are sketchy if used directly, because
+    -- there is no way to distinguish between a successful result and
+    -- a failure.
   , configSettingGetIntElem
   , configSettingGetInt64Elem
   , configSettingGetFloatElem
   , configSettingGetBoolElem
   , configSettingGetStringElem
     -- * Setting of primitives within a collection
+
+    -- | These functions return the new 'Setting' whose value was
+    -- modified, inside a 'Maybe' to signal failure.  This 'Setting'
+    -- may be a pre-existing 'Setting' or it might get allocated
+    -- during this call (if you pass a negative index).
   , configSettingSetIntElem
   , configSettingSetInt64Elem
   , configSettingSetFloatElem
   , configSettingSetBoolElem
   , configSettingSetStringElem
+    -- * Direct lookup by path
+
+    -- | Some of these functions return tuples where the C counterpart
+    -- (obviously) does not, e.g. 'configLookupInt64'
+    -- vs. @config_lookup_int64@.  This happens because the C function
+    -- wants an pointer to something it can use as a result value;
+    -- 'configLookup' returns a tuple @(retval, result)@.  In this
+    -- case, @retval@ has type 'ConfigBool' (the same as it would be
+    -- in C) and @result@ has type 'Int64'.
+  , configLookup
+  , configLookupFrom
+  , configLookupInt
+  , configLookupInt64
+  , configLookupFloat
+  , configLookupBool
+  , configLookupString
     -- * Collection management
   , configSettingIndex
   , configSettingLength
@@ -77,6 +113,18 @@ module Language.Libconfig (
   , configSettingName
   , configSettingParent
   , configSettingIsRoot
+  , configRootSetting
+  , configGetDefaultFormat
+  , configSetDefaultFormat
+  , configGetTabWidth
+  , configSetTabWidth
+  , configSettingSourceLine
+  , configSettingSourceFile
+    -- * Error reporting
+  , configErrorFile
+  , configErrorText
+  , configErrorLine
+  , configErrorType
     -- * Config file type system
   , configSettingType
   , configSettingIsGroup
@@ -85,18 +133,11 @@ module Language.Libconfig (
   , configSettingIsAggregate
   , configSettingIsNumber
   , configSettingIsScalar
-    -- * Direct lookup by path
-  , configLookup
-  , configLookupFrom
-  , configLookupInt
-  , configLookupInt64
-  , configLookupFloat
-  , configLookupBool
-  , configLookupString
   ) where
 
 import Foreign
 import Foreign.C
+import Control.Monad ((>=>))
 import Control.Applicative
 
 #include <libconfig.h>
@@ -132,7 +173,7 @@ data ConfigBool = ConfigFalse
 
 -- {#pointer *config_value_t as ConfigValuePtr -> ConfigValue #}
 
-{#pointer *config_setting_t as SettingPtr -> Setting #}
+{#pointer *config_setting_t as SettingPtr -> Setting' #}
 
 {#pointer *config_t as ConfigPtr -> Config #}
 
@@ -166,7 +207,7 @@ configValueType (SVal _) = "SVal"
 configValueType (List _) = "List"
 configValueType None = "None"
 
-data Setting = Setting {
+data Setting' = Setting' {
     name'Setting :: CString
     , type'Setting :: CShort
     , format'Setting :: CShort
@@ -203,7 +244,7 @@ pokeConfigValue _ _ v ty =
           configValueType v ++ "' and config_setting_t type tag '" ++
           show ty ++ "'!"
 
-instance Storable Setting where
+instance Storable Setting' where
   sizeOf _ = {#sizeof config_setting_t #}
   alignment _ = {#alignof config_setting_t #}
   peek p = do
@@ -211,13 +252,13 @@ instance Storable Setting where
     ty <- {#get config_setting_t->type #} p
     fmt <- {#get config_setting_t->format #} p
     val <- peekConfigValue p 8 (toConfigType ty)
-    Setting nm ty fmt val <$>
+    Setting' nm ty fmt val <$>
            {#get config_setting_t->parent #} p <*>
            {#get config_setting_t->config #} p <*>
            {#get config_setting_t->hook #} p <*>
            {#get config_setting_t->line #} p <*>
            {#get config_setting_t->file #} p
-  poke p Setting{..} = do
+  poke p Setting'{..} = do
     {#set config_setting_t->name #} p name'Setting
     {#set config_setting_t->type #} p type'Setting
     {#set config_setting_t->format #} p format'Setting
@@ -227,6 +268,15 @@ instance Storable Setting where
     {#set config_setting_t->hook #} p hook'Setting
     {#set config_setting_t->line #} p line'Setting
     {#set config_setting_t->file #} p file'Setting
+
+-- libconfig itself manages all the 'Setting's, including deallocation
+-- and allocation, so we don't have to use a 'ForeignPtr' or
+-- 'StablePtr' here.  TODO(MP): Ensure that a 'Setting' can't get used
+-- outside the scope of its parent 'Configuration'
+
+-- | Corresponds to a @libconfig@ @config_setting_t@ value; wrapped
+-- opaquely for pointer safety.
+newtype Setting = Setting { getSetting :: Ptr Setting' } deriving (Eq)
 
 data Config = Config {
     root'Config :: SettingPtr
@@ -273,165 +323,318 @@ instance Storable Config where
            {#set config_t->filenames #} p filenames'Config
            {#set config_t->num_filenames #} p num_filenames'Config
 
-withConfig :: Config -> (ConfigPtr -> IO b) -> IO b
-withConfig = with
+foreign import ccall unsafe "src/Language/Libconfig.chs.h config_init"
+  configInit' :: Ptr Config -> IO ()
 
-withSetting :: Setting -> (SettingPtr -> IO b) -> IO b
-withSetting = with
+foreign import ccall unsafe "src/Language/Libconfig.chs.h &config_destroy"
+  configDestroy' :: FunPtr (Ptr Config -> IO ())
+
+-- | Top-level configuration value, corresponding to the libconfig
+-- @config_t@.  Wrapped opaquely for pointer-safety.
+newtype Configuration = Configuration { getConfiguration :: ForeignPtr Config }
+                      deriving (Eq)
+
+configInit :: IO Configuration
+configInit = do
+  c <- mallocForeignPtr
+  addForeignPtrFinalizer configDestroy' c
+  withForeignPtr c configInit'
+  return $ Configuration c
+
+withConfiguration :: Configuration -> (Ptr Config -> IO a) -> IO a
+withConfiguration (Configuration c) = withForeignPtr c
+
+modifyConfiguration :: Configuration -> (Config -> Config) -> IO ()
+modifyConfiguration (Configuration p) mf = withForeignPtr p $ \cp -> do
+  c <- peek cp
+  poke cp $ mf c
+
+onConfiguration :: (Config -> a) -> Configuration -> IO a
+onConfiguration f = flip withConfiguration (fmap f . peek)
+
+{- Marshalling -}
+
+checkPtr :: Storable a => Ptr a -> Maybe (Ptr a)
+checkPtr p
+  | nullPtr == p = Nothing
+  | otherwise    = Just p
+
+checkSetting :: Ptr Setting' -> Maybe Setting
+checkSetting = fmap Setting . checkPtr
+
+peekIntegral :: (Integral a, Storable a, Num b) => Ptr a -> IO b
+peekIntegral = fmap fromIntegral . peek
+
+peekFloat :: (Real a, Storable a, Fractional b) => Ptr a -> IO b
+peekFloat = fmap realToFrac . peek
+
+peekBool :: (Eq a, Num a, Storable a) => Ptr a -> IO Bool
+peekBool = fmap toBool . peek
+
+peekString :: Ptr CString -> IO String
+peekString = peek >=> peekCString
+
+asBool :: Integral a => a -> ConfigBool
+asBool = toEnum . fromIntegral
+
+checkBool :: Integral a => a -> Maybe ()
+checkBool a = case asBool a of
+  ConfigTrue  -> Just ()
+  ConfigFalse -> Nothing
+
+checkTuple :: (ConfigBool, a) -> Maybe a
+checkTuple (ConfigTrue, x) = Just x
+checkTuple _               = Nothing
 
 {- Resource management -}
 
-{#fun unsafe config_init as ^ { alloca- `Config' peek* } -> `()' #}
-
-{#fun unsafe config_destroy as ^ { withConfig* `Config' } -> `()' #}
-
 {- I/O -}
 
-{#fun unsafe config_read_file as ^ { withConfig* `Config' peek*, `String' } -> `Int' #}
+{#fun unsafe config_read_file as ^
+ { withConfiguration* `Configuration', `String' } -> `Maybe ()' checkBool #}
 
-{#fun unsafe config_write_file as ^ { withConfig* `Config' peek*, `String' } -> `Int' #}
+{#fun unsafe config_write_file as ^
+ { withConfiguration* `Configuration', `String' } -> `Maybe ()' checkBool #}
 
-{#fun unsafe config_read_string as ^ { withConfig* `Config' peek*, `String' } -> `Int' #}
+{#fun unsafe config_read_string as ^
+ { withConfiguration* `Configuration', `String' } -> `Maybe ()' checkBool #}
 
 {- Unsafe getting -}
 
-{#fun unsafe config_setting_get_int as ^ { withSetting* `Setting' } -> `Int' #}
+{#fun unsafe config_setting_get_int as ^ { `SettingPtr' } -> `Int' #}
 
-{#fun unsafe config_setting_get_int64 as ^ { withSetting* `Setting' } -> `Int64' #}
+{#fun unsafe config_setting_get_int64 as ^ { `SettingPtr' } -> `Int64' #}
 
-{#fun unsafe config_setting_get_float as ^ { withSetting* `Setting' } -> `Double' #}
+{#fun unsafe config_setting_get_float as ^ { `SettingPtr' } -> `Double' #}
 
-{#fun unsafe config_setting_get_bool as ^ { withSetting* `Setting' } -> `Bool' toBool #}
+{#fun unsafe config_setting_get_bool as ^ { `SettingPtr' } -> `Bool' toBool #}
 
-{#fun unsafe config_setting_get_string as ^ { withSetting* `Setting' } -> `String' #}
+{#fun unsafe config_setting_get_string as ^ { `SettingPtr' } -> `String' #}
 
 {- Safe getting -}
 
-{#fun unsafe config_setting_lookup_int as ^
- { withSetting* `Setting', `String', alloca- `CInt' peek* } -> `Int' #}
+{#fun unsafe config_setting_lookup_int as configSettingLookupInt'
+ { getSetting `Setting', `String', alloca- `Int' peekIntegral* } -> `ConfigBool' asBool #}
 
-{#fun unsafe config_setting_lookup_int64 as ^
- { withSetting* `Setting', `String', alloca- `CLLong' peek* } -> `Int' #}
+{#fun unsafe config_setting_lookup_int64 as configSettingLookupInt64'
+ { getSetting `Setting', `String', alloca- `Int64' peekIntegral* } -> `ConfigBool' asBool #}
 
-{#fun unsafe config_setting_lookup_float as ^
- { withSetting* `Setting', `String', alloca- `CDouble' peek* } -> `Int' #}
+{#fun unsafe config_setting_lookup_float as configSettingLookupFloat'
+ { getSetting `Setting', `String', alloca- `Double' peekFloat* } -> `ConfigBool' asBool #}
 
-{#fun unsafe config_setting_lookup_bool as ^
- { withSetting* `Setting', `String', alloca- `CInt' peek* } -> `Int' #}
+{#fun unsafe config_setting_lookup_bool as configSettingLookupBool'
+ { getSetting `Setting', `String', alloca- `Bool' peekBool* } -> `ConfigBool' asBool #}
 
-{#fun unsafe config_setting_lookup_string as ^
- { withSetting* `Setting', `String', alloca- `CString' peek* } -> `Int' #}
+{#fun unsafe config_setting_lookup_string as configSettingLookupString'
+ { getSetting `Setting', `String', alloca- `String' peekString* } -> `ConfigBool' asBool #}
+
+configSettingLookupInt :: Setting -> String -> IO (Maybe Int)
+configSettingLookupInt s = fmap checkTuple . configSettingLookupInt' s
+configSettingLookupInt64 :: Setting -> String -> IO (Maybe Int64)
+configSettingLookupInt64 s = fmap checkTuple . configSettingLookupInt64' s
+configSettingLookupFloat :: Setting -> String -> IO (Maybe Double)
+configSettingLookupFloat s = fmap checkTuple . configSettingLookupFloat' s
+configSettingLookupBool :: Setting -> String -> IO (Maybe Bool)
+configSettingLookupBool s = fmap checkTuple . configSettingLookupBool' s
+configSettingLookupString :: Setting -> String -> IO (Maybe String)
+configSettingLookupString s = fmap checkTuple . configSettingLookupString' s
 
 {- SettingPtr -}
 
-{#fun unsafe config_setting_set_int as ^ { withSetting* `Setting', `Int' } -> `Int' #}
-{#fun unsafe config_setting_set_int64 as ^ { withSetting* `Setting', `Int64' } -> `Int' #}
-{#fun unsafe config_setting_set_float as ^ { withSetting* `Setting', `Double' } -> `Int' #}
-{#fun unsafe config_setting_set_bool as ^ { withSetting* `Setting', `Bool' } -> `Int' #}
-{#fun unsafe config_setting_set_string as ^ { withSetting* `Setting', `String' } -> `Int' #}
+{#fun unsafe config_setting_set_int as ^
+ { `SettingPtr', `Int' } -> `Maybe ()' checkBool #}
+{#fun unsafe config_setting_set_int64 as ^
+ { `SettingPtr', `Int64' } -> `Maybe ()' checkBool #}
+{#fun unsafe config_setting_set_float as ^
+ { `SettingPtr', `Double' } -> `Maybe ()' checkBool #}
+{#fun unsafe config_setting_set_bool as ^
+ { `SettingPtr', `Bool' } -> `Maybe ()' checkBool #}
+{#fun unsafe config_setting_set_string as ^
+ { `SettingPtr', `String' } -> `Maybe ()' checkBool #}
 
 {- Unsafe getting elements in collections -}
 
-{#fun unsafe config_setting_get_int_elem as ^ { withSetting* `Setting', `Int' } -> `Int' #}
-{#fun unsafe config_setting_get_int64_elem as ^ { withSetting* `Setting', `Int' } -> `Int64' #}
-{#fun unsafe config_setting_get_float_elem as ^ { withSetting* `Setting', `Int' } -> `Double' #}
-{#fun unsafe config_setting_get_bool_elem as ^ { withSetting* `Setting', `Int' } -> `Bool' toBool #}
-{#fun unsafe config_setting_get_string_elem as ^ { withSetting* `Setting', `Int' } -> `String' #}
+{#fun unsafe config_setting_get_int_elem as ^ { `SettingPtr', `Int' } -> `Int' #}
+{#fun unsafe config_setting_get_int64_elem as ^ { `SettingPtr', `Int' } -> `Int64' #}
+{#fun unsafe config_setting_get_float_elem as ^ { `SettingPtr', `Int' } -> `Double' #}
+{#fun unsafe config_setting_get_bool_elem as ^ { `SettingPtr', `Int' } -> `Bool' toBool #}
+{#fun unsafe config_setting_get_string_elem as ^ { `SettingPtr', `Int' } -> `String' #}
 
 {- Setting elements in collections -}
 
 {#fun unsafe config_setting_set_int_elem as ^
- { withSetting* `Setting', `Int', `Int' } -> `Setting' peek* #}
+ { getSetting `Setting', `Int', `Int' } -> `Maybe Setting' checkSetting #}
 {#fun unsafe config_setting_set_int64_elem as ^
- { withSetting* `Setting', `Int', `Int64' } -> `Setting' peek* #}
+ { getSetting `Setting', `Int', `Int64' } -> `Maybe Setting' checkSetting #}
 {#fun unsafe config_setting_set_float_elem as ^
- { withSetting* `Setting', `Int', `Double' } -> `Setting' peek* #}
+ { getSetting `Setting', `Int', `Double' } -> `Maybe Setting' checkSetting #}
 {#fun unsafe config_setting_set_bool_elem as ^
- { withSetting* `Setting', `Int', `Bool' } -> `Setting' peek* #}
+ { getSetting `Setting', `Int', `Bool' } -> `Maybe Setting' checkSetting #}
 {#fun unsafe config_setting_set_string_elem as ^
- { withSetting* `Setting', `Int', `String' } -> `Setting' peek* #}
+ { getSetting `Setting', `Int', `String' } -> `Maybe Setting' checkSetting #}
 
 {- Collection management -}
 
-{#fun unsafe config_setting_index as ^ { withSetting* `Setting' } -> `Int' #}
+{#fun unsafe config_setting_index as ^
+ { getSetting `Setting' } -> `Int' #}
 
-{#fun config_setting_length as ^ { withSetting* `Setting' } -> `Int' #}
+{#fun config_setting_length as ^
+ { getSetting `Setting' } -> `Int' #}
 
-{#fun config_setting_get_elem as ^ { withSetting* `Setting', id `CUInt' } -> `Setting' peek* #}
+{#fun config_setting_get_elem as ^
+ { getSetting `Setting', fromIntegral `Int' } -> `Maybe Setting' checkSetting #}
 
-{#fun config_setting_get_member as ^ { withSetting* `Setting', `String' } -> `Setting' peek* #}
+{#fun config_setting_get_member as ^
+ { getSetting `Setting', `String' } -> `Maybe Setting' checkSetting #}
 
--- TODO(MP): pass back the modified parent as well?
 {#fun config_setting_add as ^
- { withSetting* `Setting', `String', fromConfigType `ConfigType' } -> `Setting' peek* #}
+ { getSetting `Setting', `String', fromConfigType `ConfigType' }
+   -> `Maybe Setting' checkSetting #}
 
 {#fun config_setting_remove as ^
- { withSetting* `Setting', `String' } -> `Int' #}
+ { getSetting `Setting', `String' } -> `Int' #}
 
 {#fun config_setting_remove_elem as ^
- { withSetting* `Setting', id `CUInt' } -> `Int' #}
+ { getSetting `Setting', fromIntegral `Int' } -> `Int' #}
+
+-- I haven't worked out a good way to do this one yet.  What's
+-- necessary is to register a finalizer for 'freeStablePtr xp' with
+-- the relevant 'Configuration' pointer.  Unfortunately, we can't go
+-- from a 'Setting' to the ForeignPtr contained in a 'Configuration'.
+--
+-- Punting for now, since I don't even know what you use this for.
+
+-- foreign import ccall unsafe "src/Language/Libconfig.chs.h config_setting_set_hook"
+--   configSettingSetHook' :: Ptr Setting' -> Ptr () -> IO ()
+
+-- configSettingSetHook :: Storable a => Setting -> a -> IO ()
+-- configSettingSetHook (Setting s) x = do
+--   xp <- newStablePtr x
+--   cfgp <- config'Setting <$> peek s
+
+-- configSettingGetHook :: Storable a => Setting -> IO a
+-- configSettingGetHook (Setting s) = fmap (castPtr . hook'Setting) (peek s) >>= peek
+
 
 {- Path search -}
 
 {#fun config_lookup as ^
- { withConfig* `Config', `String' } -> `Setting' peek* #}
+ { withConfiguration* `Configuration', `String' } -> `Maybe Setting' checkSetting #}
 
 {#fun config_lookup_from as ^
- { withSetting* `Setting', `String' } -> `Setting' peek* #}
+ { getSetting `Setting', `String' } -> `Maybe Setting' checkSetting #}
 
-{#fun config_lookup_int as ^
- { withConfig* `Config', `String', alloca- `CInt' peek* } -> `Int' #}
+{#fun config_lookup_int as configLookupInt'
+ { withConfiguration* `Configuration', `String', alloca- `Int' peekIntegral* }
+   -> `ConfigBool' asBool #}
 
-{#fun config_lookup_int64 as ^
- { withConfig* `Config', `String', alloca- `CLLong' peek* } -> `Int' #}
+{#fun config_lookup_int64 as configLookupInt64'
+ { withConfiguration* `Configuration', `String', alloca- `Int64' peekIntegral* }
+   -> `ConfigBool' asBool #}
 
-{#fun config_lookup_float as ^
- { withConfig* `Config', `String', alloca- `CDouble' peek* } -> `Int' #}
+{#fun config_lookup_float as configLookupFloat'
+ { withConfiguration* `Configuration', `String', alloca- `Double' peekFloat* }
+   -> `ConfigBool' asBool #}
 
-{#fun config_lookup_bool as ^
- { withConfig* `Config', `String', alloca- `CInt' peek* } -> `Int' #}
+{#fun config_lookup_bool as configLookupBool'
+ { withConfiguration* `Configuration', `String', alloca- `Bool' peekBool* }
+   -> `ConfigBool' asBool #}
 
-{#fun config_lookup_string as ^
- { withConfig* `Config', `String', alloca- `CString' peek* } -> `Int' #}
+{#fun config_lookup_string as configLookupString'
+ { withConfiguration* `Configuration', `String', alloca- `String' peekString* }
+   -> `ConfigBool' asBool #}
 
--- TODO(MP): Reproduce the libconfig macros
+configLookupInt :: Configuration -> String -> IO (Maybe Int)
+configLookupInt c = fmap checkTuple . configLookupInt' c
+configLookupInt64 :: Configuration -> String -> IO (Maybe Int64)
+configLookupInt64 c = fmap checkTuple . configLookupInt64' c
+configLookupFloat :: Configuration -> String -> IO (Maybe Double)
+configLookupFloat c = fmap checkTuple . configLookupFloat' c
+configLookupBool :: Configuration -> String -> IO (Maybe Bool)
+configLookupBool c = fmap checkTuple . configLookupBool' c
+configLookupString :: Configuration -> String -> IO (Maybe String)
+configLookupString c = fmap checkTuple . configLookupString' c
 
-configSettingType :: Setting -> ConfigType
-configSettingType = toConfigType . type'Setting
+configSettingType :: Setting -> IO ConfigType
+configSettingType = fmap (toConfigType . type'Setting) . peek . getSetting
 
-configSettingIsGroup :: Setting -> Bool
-configSettingIsGroup = (== GroupType) . configSettingType
+configSettingIsGroup :: Setting -> IO Bool
+configSettingIsGroup = fmap (== GroupType) . configSettingType
 
-configSettingIsArray :: Setting -> Bool
-configSettingIsArray = (== ArrayType) . configSettingType
+configSettingIsArray :: Setting -> IO Bool
+configSettingIsArray = fmap (== ArrayType) . configSettingType
 
-configSettingIsList :: Setting -> Bool
-configSettingIsList = (== ListType) . configSettingType
+configSettingIsList :: Setting -> IO Bool
+configSettingIsList = fmap (== ListType) . configSettingType
 
-configSettingIsAggregate :: Setting -> Bool
-configSettingIsAggregate s =
-  configSettingType s `elem` [ListType, GroupType, ArrayType]
+configSettingIsAggregate :: Setting -> IO Bool
+configSettingIsAggregate =
+  fmap (`elem` [ListType, GroupType, ArrayType]) . configSettingType
 
-configSettingIsNumber :: Setting -> Bool
-configSettingIsNumber s =
-  configSettingType s `elem` [IntType, Int64Type, FloatType]
+configSettingIsNumber :: Setting -> IO Bool
+configSettingIsNumber =
+  fmap (`elem` [IntType, Int64Type, FloatType]) . configSettingType
 
-configSettingIsScalar :: Setting -> Bool
-configSettingIsScalar s =
-  configSettingType s `elem` [IntType, Int64Type, FloatType, BoolType, StringType]
+configSettingIsScalar :: Setting -> IO Bool
+configSettingIsScalar =
+  fmap (`elem` [IntType, Int64Type, FloatType, BoolType, StringType]) .
+  configSettingType
 
 configSettingName :: Setting -> IO String
-configSettingName = peekCString . name'Setting
+configSettingName (Setting s) = peek s >>= peekCString . name'Setting
 
-configSettingParent :: Setting -> IO Setting
-configSettingParent = peek . parent'Setting
+configSettingParent :: Setting -> IO (Maybe Setting)
+configSettingParent = fmap (checkSetting . parent'Setting) . peek . getSetting
 
-configSettingIsRoot :: Setting -> Bool
-configSettingIsRoot s = parent'Setting s == nullPtr
+configSettingIsRoot :: Setting -> IO Bool
+configSettingIsRoot = fmap ((==nullPtr) . parent'Setting) . peek . getSetting
 
+configRootSetting :: Configuration -> IO (Maybe Setting)
+configRootSetting =
+  flip withForeignPtr (fmap (checkSetting . root'Config) . peek) . getConfiguration
 
--- TODO(MP): Null pointer checks for functions that return a config
--- setting, config, etc.
+configSetDefaultFormat :: Configuration -> ConfigFormat -> IO ()
+configSetDefaultFormat c' f =
+  modifyConfiguration c' $
+  \c -> c { default_format'Config = fromIntegral $ fromEnum f }
 
--- TODO(MP): Adapt to native Haskell types in alloca- X peek* cases
--- where c2hs can't do it
+configGetDefaultFormat :: Configuration -> IO ConfigFormat
+configGetDefaultFormat =
+  onConfiguration (toEnum . fromIntegral . default_format'Config)
+
+configSetTabWidth :: Configuration -> Int -> IO ()
+configSetTabWidth c' w =
+  modifyConfiguration c' $
+  \c -> c { tab_width'Config = fromIntegral w }
+
+configGetTabWidth :: Configuration -> IO Int
+configGetTabWidth =
+  onConfiguration (fromIntegral . tab_width'Config)
+
+configSettingSourceLine :: Setting -> IO Int
+configSettingSourceLine =
+  fmap (fromIntegral . line'Setting) . peek . getSetting
+
+configSettingSourceFile :: Setting -> IO String
+configSettingSourceFile (Setting s) = peek s >>= peekCString . file'Setting
+
+configErrorFile :: Configuration -> IO String
+configErrorFile c =
+  withConfiguration c $
+  \p -> peek p >>= peekCString . error_file'Config
+
+configErrorText :: Configuration -> IO String
+configErrorText c =
+  withConfiguration c $
+  \p -> peek p >>= peekCString . error_text'Config
+
+configErrorLine :: Configuration -> IO Int
+configErrorLine =
+  onConfiguration (fromIntegral . error_line'Config)
+
+configErrorType :: Configuration -> IO ConfigErr
+configErrorType =
+  onConfiguration (toEnum . fromIntegral . error_type'Config)
+
+-- TODO(MP): Perhaps a MonadIO m => ConfigT m which both wraps non-IO
+-- config actions and uses ExceptT or MaybeT to keep track of errors
