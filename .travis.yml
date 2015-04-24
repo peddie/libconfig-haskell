@@ -68,7 +68,7 @@ script:
   - if [ -f configure.ac ]; then autoreconf -i; fi
   - cabal configure -fexamples --enable-tests --enable-benchmarks -v2
   - cabal build -j3
-  - cabal test
+  - cabal test --show-details=always
   - cabal bench
   - cabal check
   - cabal sdist
