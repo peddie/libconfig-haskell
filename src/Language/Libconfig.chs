@@ -14,9 +14,12 @@ Portability :  GHC
 Low-level FFI bindings to the <http://www.hyperrealm.com/libconfig/ libconfig>
 configuration file library.  Please see the
 <http://www.hyperrealm.com/libconfig/libconfig_manual.html libconfig manual>
-for documentation on what the various functions actually do; the
-documentation in this module is only to do with FFI details and
-C-vs.-Haskell impedance mismatches.
+for documentation on what the various functions actually do and the
+underlying model of the libconfig API.  The documentation in this
+module contains many usage examples which double as tests, but the
+focus is only on FFI details and C-vs.-Haskell impedance mismatches.
+As a result, there is no explanation of the behavior of many of the
+functions.
 
 -}
 
@@ -29,10 +32,10 @@ module Language.Libconfig (
   , Setting
   , ConfigErr(..)
   , ConfigType(..)
-  , ConfigBool(..)
   , ConfigFormat(..)
     -- * Resource management
   , configInit
+  , configNew
     -- * Config I/O
   , configReadFile
   , configWriteFile
@@ -50,8 +53,10 @@ module Language.Libconfig (
 
     -- |
     -- These functions are sketchy if used directly, because there is
-    -- no way to distinguish between a successful result and a
-    -- failure.
+    -- no way to distinguish between a successful result and a failure
+    -- (at the @libconfig@ level).  Take care to only ever use these
+    -- once you've already checked the 'ConfigType' of the 'Setting'
+    -- using 'configSettingType'.
   , configSettingGetInt
   , configSettingGetInt64
   , configSettingGetFloat
@@ -69,9 +74,16 @@ module Language.Libconfig (
   , configSettingSetString
     -- * Unsafe getting of primitives from a collection
 
-    -- | These functions are sketchy if used directly, because
-    -- there is no way to distinguish between a successful result and
-    -- a failure.
+    -- |
+    -- These functions are sketchy if used directly, because there is
+    -- no way to distinguish between a successful result and a failure
+    -- (at the @libconfig@ level).  Take care to only ever use these
+    -- once you've already checked the 'ConfigType' of the element
+    -- using 'configSettingType' or verified it for other elements of
+    -- an array.
+    --
+    -- These functions may be used on collections with type
+    -- 'GroupType', 'ArrayType' or 'ListType'.
   , configSettingGetIntElem
   , configSettingGetInt64Elem
   , configSettingGetFloatElem
@@ -83,6 +95,9 @@ module Language.Libconfig (
     -- these functions return 'Nothing'.  If the function succeeds,
     -- the Setting that is returned will be either the same 'Setting'
     -- that previously existed at that spot or a newly allocated one.
+    --
+    -- These functions may be used on collections with type
+    -- 'ArrayType' or 'ListType' (but __not__ 'GroupType').
   , configSettingSetIntElem
   , configSettingSetInt64Elem
   , configSettingSetFloatElem
@@ -114,6 +129,8 @@ module Language.Libconfig (
   , configRootSetting
   , configGetDefaultFormat
   , configSetDefaultFormat
+  , configSettingGetFormat
+  , configSettingSetFormat
   , configGetTabWidth
   , configSetTabWidth
   , configSettingSourceLine
@@ -144,14 +161,24 @@ import Control.Applicative
 -- which is provided in the
 -- <http://www.hyperrealm.com/libconfig/libconfig_manual.html#Configuration-Files libconfig manual>.
 --
--- >>> conf <- configInit
--- >>> configReadFile conf "test/test.conf"
--- Just ()
+-- >>> Just conf <- configNew "test/test.conf"
+-- >>> Just app <- configLookup conf "application"
+-- >>> Just misc <- configLookupFrom app "misc"
+-- >>> Just winsize <- configLookupFrom app "window.size"
+--
+-- @conf'@ is used for modifying values.
+--
+-- >>> Just conf' <- configNew "test/test.conf"
 
 #include <libconfig.h>
 
+-- | This is a set of possible errors that can occur when @libconfig@
+-- tries to read in a config file.
 {#enum config_error_t as ConfigErr {underscoreToCase} deriving (Show, Eq) #}
 
+-- | This is a set of possible @libconfig@ types.  Many functions will
+-- return 'Nothing' if you attempt to use a value as the incorrect
+-- type.  See the @libconfig@ manual for more details.
 data ConfigType = NoneType
                 | GroupType
                 | IntType
@@ -163,12 +190,15 @@ data ConfigType = NoneType
                 | ListType
                 deriving (Eq, Show, Read, Ord, Enum, Bounded)
 
-fromConfigType :: Integral a => ConfigType -> a
-fromConfigType = fromIntegral . fromEnum
+fromEnumIntegral :: (Enum c, Integral a) => c -> a
+fromEnumIntegral = fromIntegral . fromEnum
 
-toConfigType :: Integral a => a -> ConfigType
-toConfigType = toEnum . fromIntegral
+toEnumIntegral :: (Enum c, Integral a) => a -> c
+toEnumIntegral = toEnum . fromIntegral
 
+-- | This is used for fine-grained configuration of how integers are
+-- output when a config file is written.  See 'configGetDefaultFormat'
+-- and the @libconfig@ manual.
 data ConfigFormat = DefaultFormat
                   | HexFormat
                   deriving (Eq, Show, Read, Ord, Enum, Bounded)
@@ -257,7 +287,7 @@ instance Storable Setting' where
     nm <- {#get config_setting_t->name #} p
     ty <- {#get config_setting_t->type #} p
     fmt <- {#get config_setting_t->format #} p
-    val <- peekConfigValue p 8 (toConfigType ty)
+    val <- peekConfigValue p 8 (toEnumIntegral ty)
     Setting' nm ty fmt val <$>
            {#get config_setting_t->parent #} p <*>
            {#get config_setting_t->config #} p <*>
@@ -268,7 +298,7 @@ instance Storable Setting' where
     {#set config_setting_t->name #} p name'Setting
     {#set config_setting_t->type #} p type'Setting
     {#set config_setting_t->format #} p format'Setting
-    pokeConfigValue p 8 value'Setting (toConfigType type'Setting)
+    pokeConfigValue p 8 value'Setting (toEnumIntegral type'Setting)
     {#set config_setting_t->parent #} p parent'Setting
     {#set config_setting_t->config #} p config'Setting
     {#set config_setting_t->hook #} p hook'Setting
@@ -340,6 +370,7 @@ foreign import ccall unsafe "src/Language/Libconfig.chs.h &config_destroy"
 newtype Configuration = Configuration { getConfiguration :: ForeignPtr Config }
                       deriving (Eq)
 
+-- | This function allocates a new 'Configuration' and initializes it.
 configInit :: IO Configuration
 configInit = do
   c <- mallocForeignPtr
@@ -396,25 +427,62 @@ checkTuple _               = Nothing
 
 {- I/O -}
 
+-- | Read in a 'Configuration' from the specified configuration file.
+-- The 'Configuration' should already be initialized with
+-- 'configInit'.
 {#fun unsafe config_read_file as ^
  { withConfiguration* `Configuration', `String' } -> `Maybe ()' checkBool #}
 
+-- | Create a new 'Configuration' and read in the data from the
+-- specified configuration file.
+--
+-- >> configNew s = configInit >>= \c -> configReadFile c s
+configNew :: String -> IO (Maybe Configuration)
+configNew s = do
+  c <- configInit
+  red <- configReadFile c s
+  return $ case red of
+            Nothing -> Nothing
+            Just _  -> Just c
+
+-- | Write out a 'Configuration' to the specified configuration file.
 {#fun unsafe config_write_file as ^
  { withConfiguration* `Configuration', `String' } -> `Maybe ()' checkBool #}
 
+-- | Read configuration data from a string.
 {#fun unsafe config_read_string as ^
  { withConfiguration* `Configuration', `String' } -> `Maybe ()' checkBool #}
 
 {- Unsafe getting -}
 
+-- |
+-- >>> Just appwinwidth <- configLookup conf "application.window.size.w"
+-- >>> configSettingGetInt appwinwidth
+-- 640
 {#fun unsafe config_setting_get_int as ^ { getSetting `Setting' } -> `Int' #}
 
+-- |
+-- >>> Just miscbigint <- configLookup conf "application.misc.bigint"
+-- >>> configSettingGetInt64 miscbigint
+-- 9223372036854775807
 {#fun unsafe config_setting_get_int64 as ^ { getSetting `Setting' } -> `Int64' #}
 
+-- |
+-- >>> Just miscpi <- configLookup conf "application.misc.pi"
+-- >>> configSettingGetFloat miscpi
+-- 3.141592654
 {#fun unsafe config_setting_get_float as ^ { getSetting `Setting' } -> `Double' #}
 
+-- |
+-- >>> Just listbool <- configLookup conf "application.list.[0].[2]"
+-- >>> configSettingGetBool listbool
+-- True
 {#fun unsafe config_setting_get_bool as ^ { getSetting `Setting' } -> `Bool' toBool #}
 
+-- |
+-- >>> Just wintitle <- configLookup conf "application.window.title"
+-- >>> configSettingGetString wintitle
+-- "My Application"
 {#fun unsafe config_setting_get_string as ^ { getSetting `Setting' } -> `String' #}
 
 {- Safe getting -}
@@ -434,74 +502,252 @@ checkTuple _               = Nothing
 {#fun unsafe config_setting_lookup_string as configSettingLookupString'
  { getSetting `Setting', `String', alloca- `String' peekString* } -> `ConfigBool' asBool #}
 
+-- |
+-- >>> configSettingLookupInt winsize "w"
+-- Just 640
 configSettingLookupInt :: Setting -> String -> IO (Maybe Int)
 configSettingLookupInt s = fmap checkTuple . configSettingLookupInt' s
+
+-- |
+-- >>> configSettingLookupInt64 misc "bigint"
+-- Just 9223372036854775807
 configSettingLookupInt64 :: Setting -> String -> IO (Maybe Int64)
 configSettingLookupInt64 s = fmap checkTuple . configSettingLookupInt64' s
+
+-- |
+-- >>> configSettingLookupFloat misc "pi"
+-- Just 3.141592654
 configSettingLookupFloat :: Setting -> String -> IO (Maybe Double)
 configSettingLookupFloat s = fmap checkTuple . configSettingLookupFloat' s
+
+-- | (The example configuration file does not contain any boolean
+-- values that are direct children of a @config_setting_t@.)
 configSettingLookupBool :: Setting -> String -> IO (Maybe Bool)
 configSettingLookupBool s = fmap checkTuple . configSettingLookupBool' s
+
+-- |
+-- >>> Just win <- configLookupFrom app "window"
+-- >>> configSettingLookupString win "title"
+-- Just "My Application"
 configSettingLookupString :: Setting -> String -> IO (Maybe String)
 configSettingLookupString s = fmap checkTuple . configSettingLookupString' s
 
 {- Setting values -}
 
+-- |
+-- >>> Just treasureqty <- configLookup conf' "application.books.[0].qty"
+-- >>> configSettingSetInt treasureqty 222
+-- Just ()
+-- >>> configSettingGetInt treasureqty
+-- 222
 {#fun unsafe config_setting_set_int as ^
  { getSetting `Setting', `Int' } -> `Maybe ()' checkBool #}
+
+-- |
+-- >>> Just miscbigint <- configLookup conf' "application.misc.bigint"
+-- >>> configSettingSetInt64 miscbigint 92233720368547758
+-- Just ()
+-- >>> configSettingGetInt64 miscbigint
+-- 92233720368547758
 {#fun unsafe config_setting_set_int64 as ^
  { getSetting `Setting', `Int64' } -> `Maybe ()' checkBool #}
+
+-- |
+-- >>> Just treasureprice <- configLookup conf' "application.books.[0].price"
+-- >>> configSettingSetFloat treasureprice 22.22
+-- Just ()
+-- >>> configSettingGetFloat treasureprice
+-- 22.22
 {#fun unsafe config_setting_set_float as ^
  { getSetting `Setting', `Double' } -> `Maybe ()' checkBool #}
+
+-- |
+-- >>> Just listbool <- configLookup conf' "application.list.[0].[2]"
+-- >>> configSettingSetBool listbool False
+-- Just ()
+-- >>> configSettingGetBool listbool
+-- False
 {#fun unsafe config_setting_set_bool as ^
  { getSetting `Setting', `Bool' } -> `Maybe ()' checkBool #}
+
+-- |
+-- >>> Just treasureauthor <- configLookup conf' "application.books.[0].author"
+-- >>> configSettingSetString treasureauthor "Robert L. Stevenson"
+-- Just ()
+-- >>> configSettingGetString treasureauthor
+-- "Robert L. Stevenson"
 {#fun unsafe config_setting_set_string as ^
  { getSetting `Setting', `String' } -> `Maybe ()' checkBool #}
 
 {- Unsafe getting elements in collections -}
 
-{#fun unsafe config_setting_get_int_elem as ^ { getSetting `Setting', `Int' } -> `Int' #}
-{#fun unsafe config_setting_get_int64_elem as ^ { getSetting `Setting', `Int' } -> `Int64' #}
-{#fun unsafe config_setting_get_float_elem as ^ { getSetting `Setting', `Int' } -> `Double' #}
-{#fun unsafe config_setting_get_bool_elem as ^ { getSetting `Setting', `Int' } -> `Bool' toBool #}
-{#fun unsafe config_setting_get_string_elem as ^ { getSetting `Setting', `Int' } -> `String' #}
+-- |
+-- >>> Just treasure <- configLookup conf "application.books.[0]"
+-- >>> configSettingGetIntElem treasure 3
+-- 5
+{#fun unsafe config_setting_get_int_elem as ^
+ { getSetting `Setting', `Int' } -> `Int' #}
+
+-- |
+-- >>> Just misc <- configLookup conf "application.misc"
+-- >>> configSettingGetInt64Elem misc 1
+-- 9223372036854775807
+{#fun unsafe config_setting_get_int64_elem as ^
+ { getSetting `Setting', `Int' } -> `Int64' #}
+
+-- |
+-- >>> Just list <- configLookup conf "application.list"
+-- >>> configSettingGetFloatElem list 1
+-- 1.234
+{#fun unsafe config_setting_get_float_elem as ^
+ { getSetting `Setting', `Int' } -> `Double' #}
+
+-- | (The example configuration does not contain any boolean values
+-- that are direct children of collections of type
+-- @config_setting_t@).
+{#fun unsafe config_setting_get_bool_elem as ^
+ { getSetting `Setting', `Int' } -> `Bool' toBool #}
+
+-- |
+-- >>> Just win <- configLookup conf "application.window"
+-- >>> configSettingGetStringElem win 0
+-- "My Application"
+{#fun unsafe config_setting_get_string_elem as ^
+ { getSetting `Setting', `Int' } -> `String' #}
 
 {- Setting elements in collections -}
 
+-- | (This example appends a new value of type 'IntType' to
+-- @application.list@, because the example file contains no suitable
+-- example values for us to modify.)
+--
+-- >>> Just list <- configLookup conf' "application.list"
+-- >>> Just new3 <- configSettingSetIntElem list (-1) 22
+-- >>> configSettingGetIntElem list 3
+-- 22
+-- >>> configSettingGetInt new3
+-- 22
 {#fun unsafe config_setting_set_int_elem as ^
  { getSetting `Setting', `Int', `Int' } -> `Maybe Setting' checkSetting #}
+
+-- | (This example appends a new value of type 'Int64Type' to
+-- @application.list@, because the example file contains no suitable
+-- example values for us to modify.)
+--
+-- >>> Just list <- configLookup conf' "application.list"
+-- >>> Just new3 <- configSettingSetInt64Elem list (-1) 92233720368547758
+-- >>> configSettingGetInt64Elem list 3
+-- 92233720368547758
+-- >>> configSettingGetInt64 new3
+-- 92233720368547758
 {#fun unsafe config_setting_set_int64_elem as ^
  { getSetting `Setting', `Int', `Int64' } -> `Maybe Setting' checkSetting #}
+
+-- |
+-- >>> Just list <- configLookup conf' "application.list"
+-- >>> Just new1 <- configSettingSetFloatElem list 1 0.2222
+-- >>> configSettingGetFloatElem list 1
+-- 0.2222
+-- >>> configSettingGetFloat new1
+-- 0.2222
 {#fun unsafe config_setting_set_float_elem as ^
  { getSetting `Setting', `Int', `Double' } -> `Maybe Setting' checkSetting #}
+
+-- | (This example appends a new value of type 'BoolType' to
+-- @application.list@, because the example file contains no suitable
+-- example values for us to modify.)
+--
+-- >>> Just list <- configLookup conf' "application.list"
+-- >>> Just new3 <- configSettingSetBoolElem list (-1) False
+-- >>> configSettingGetBoolElem list 3
+-- False
+-- >>> configSettingGetBool new3
+-- False
 {#fun unsafe config_setting_set_bool_elem as ^
  { getSetting `Setting', `Int', `Bool' } -> `Maybe Setting' checkSetting #}
+
+-- |
+-- >>> Just misccols <- configLookup conf' "application.misc.columns"
+-- >>> Just new0 <- configSettingSetStringElem misccols 0 "butts"
+-- >>> configSettingGetStringElem misccols 0
+-- "butts"
+-- >>> configSettingGetString new0
+-- "butts"
 {#fun unsafe config_setting_set_string_elem as ^
  { getSetting `Setting', `Int', `String' } -> `Maybe Setting' checkSetting #}
 
 {- Collection management -}
 
+-- |
+-- >>> Just col0 <- configLookup conf "application.misc.columns.[0]"
+-- >>> configSettingIndex col0
+-- 0
 {#fun unsafe config_setting_index as ^
  { getSetting `Setting' } -> `Int' #}
 
+-- |
+-- >>> Just cols <- configLookup conf "application.misc.columns"
+-- >>> configSettingLength cols
+-- 3
 {#fun config_setting_length as ^
  { getSetting `Setting' } -> `Int' #}
 
+-- |
+-- >>> Just cols <- configLookup conf "application.misc.columns"
+-- >>> Just col0 <- configSettingGetElem cols 0
+-- >>> configSettingGetString col0
+-- "Last Name"
 {#fun config_setting_get_elem as ^
  { getSetting `Setting', fromIntegral `Int' } -> `Maybe Setting' checkSetting #}
 
+-- |
+-- >>> Just miscpi <- configSettingGetMember misc "pi"
+-- >>> configSettingGetFloat miscpi
+-- 3.141592654
 {#fun config_setting_get_member as ^
  { getSetting `Setting', `String' } -> `Maybe Setting' checkSetting #}
 
+-- |
+-- >>> Just misc' <- configLookup conf' "application.misc"
+-- >>> Just randSeed <- configSettingAdd misc' "random_seed" IntType
+-- >>> configSettingSetInt randSeed 55
+-- Just ()
+-- >>> configSettingGetInt randSeed
+-- 55
+-- >>> configSettingLookupInt misc' "random_seed"
+-- Just 55
+-- >>> configSettingGetIntElem misc' 4
+-- 55
 {#fun config_setting_add as ^
- { getSetting `Setting', `String', fromConfigType `ConfigType' }
+ { getSetting `Setting', `String', fromEnumIntegral `ConfigType' }
    -> `Maybe Setting' checkSetting #}
 
+-- |
+-- >>> Just misc' <- configLookup conf' "application.misc"
+-- >>> configSettingLength misc'
+-- 4
+-- >>> configSettingRemove misc' "bitmask"
+-- Just ()
+-- >>> configSettingLength misc'
+-- 3
 {#fun config_setting_remove as ^
- { getSetting `Setting', `String' } -> `Int' #}
+ { getSetting `Setting', `String' } -> `Maybe ()' checkBool #}
 
+-- |
+-- >>> Just misc' <- configLookup conf' "application.misc"
+-- >>> configSettingLength misc'
+-- 4
+-- >>> configSettingRemoveElem misc' 2
+-- Just ()
+-- >>> configSettingLength misc'
+-- 3
+-- >>> Just new2 <- configSettingGetElem misc' 2
+-- >>> configSettingType new2
+-- IntType
+-- >>> configSettingGetInt new2
+-- 8131
 {#fun config_setting_remove_elem as ^
- { getSetting `Setting', fromIntegral `Int' } -> `Int' #}
+ { getSetting `Setting', fromIntegral `Int' } -> `Maybe ()' checkBool #}
 
 -- I haven't worked out a good way to do this one yet.  What's
 -- necessary is to register a finalizer for 'freeStablePtr xp' with
@@ -532,7 +778,6 @@ configSettingLookupString s = fmap checkTuple . configSettingLookupString' s
  { withConfiguration* `Configuration', `String' } -> `Maybe Setting' checkSetting #}
 
 -- |
--- >>> Just app <- configLookup conf "application"
 -- >>> Just list <- configLookupFrom app "list"
 -- >>> configSettingName list
 -- Just "list"
@@ -558,6 +803,26 @@ configSettingLookupString s = fmap checkTuple . configSettingLookupString' s
 {#fun config_lookup_string as configLookupString'
  { withConfiguration* `Configuration', `String', alloca- `String' peekString* }
    -> `ConfigBool' asBool #}
+
+-- |
+-- >>> Just appwinwidth <- configLookup conf "application.window.size.w"
+-- >>> configSettingGetFormat appwinwidth
+-- DefaultFormat
+{#fun config_setting_get_format as ^
+ { getSetting `Setting' }
+   -> `ConfigFormat' toEnumIntegral #}
+
+-- |
+-- >>> Just appwinwidth' <- configLookup conf' "application.window.size.w"
+-- >>> configSettingGetFormat appwinwidth'
+-- DefaultFormat
+-- >>> configSettingSetFormat appwinwidth' HexFormat
+-- Just ()
+-- >>> configSettingGetFormat appwinwidth'
+-- HexFormat
+{#fun config_setting_set_format as ^
+ { getSetting `Setting', fromEnumIntegral `ConfigFormat' }
+   -> `Maybe ()' checkBool #}
 
 -- |
 -- >>> configLookupInt conf "application.window.size.w"
@@ -590,31 +855,78 @@ configLookupBool c = fmap checkTuple . configLookupBool' c
 configLookupString :: Configuration -> String -> IO (Maybe String)
 configLookupString c = fmap checkTuple . configLookupString' c
 
+-- |
+-- >>> Just list <- configLookup conf "application.list"
+-- >>> configSettingType list
+-- ListType
 configSettingType :: Setting -> IO ConfigType
-configSettingType = fmap (toConfigType . type'Setting) . peek . getSetting
+configSettingType = fmap (toEnumIntegral . type'Setting) . peek . getSetting
 
+-- |
+-- >>> Just grp <- configLookup conf "application.window"
+-- >>> configSettingIsGroup grp
+-- True
 configSettingIsGroup :: Setting -> IO Bool
 configSettingIsGroup = fmap (== GroupType) . configSettingType
 
+-- |
+-- >>> Just arr <- configLookup conf "application.misc.columns"
+-- >>> configSettingIsArray arr
+-- True
 configSettingIsArray :: Setting -> IO Bool
 configSettingIsArray = fmap (== ArrayType) . configSettingType
 
+-- |
+-- >>> Just list <- configLookup conf "application.list"
+-- >>> configSettingIsList list
+-- True
 configSettingIsList :: Setting -> IO Bool
 configSettingIsList = fmap (== ListType) . configSettingType
 
+-- |
+-- >>> Just grp <- configLookup conf "application.window"
+-- >>> Just arr <- configLookup conf "application.misc.columns"
+-- >>> Just list <- configLookup conf "application.list"
+-- >>> Just width <- configLookup conf "application.window.size.w"
+-- >>> mapM configSettingIsAggregate [grp, arr, list, width]
+-- [True,True,True,False]
 configSettingIsAggregate :: Setting -> IO Bool
 configSettingIsAggregate =
   fmap (`elem` [ListType, GroupType, ArrayType]) . configSettingType
 
+-- |
+-- >>> Just int <- configLookup conf "application.window.pos.x"
+-- >>> Just bigint <- configLookup conf "application.misc.bigint"
+-- >>> Just float <- configLookup conf "application.misc.pi"
+-- >>> Just grp <- configLookup conf "application.window"
+-- >>> mapM configSettingIsNumber [int, bigint, float, grp]
+-- [True,True,True,False]
 configSettingIsNumber :: Setting -> IO Bool
 configSettingIsNumber =
   fmap (`elem` [IntType, Int64Type, FloatType]) . configSettingType
 
+-- |
+-- >>> Just int <- configLookup conf "application.window.pos.x"
+-- >>> Just bigint <- configLookup conf "application.misc.bigint"
+-- >>> Just float <- configLookup conf "application.misc.pi"
+-- >>> Just bool <- configLookup conf "application.list.[0].[2]"
+-- >>> Just str <- configLookup conf "application.window.title"
+-- >>> Just grp <- configLookup conf "application.window"
+-- >>> mapM configSettingIsScalar [int, bigint, float, bool, str, grp]
+-- [True,True,True,True,True,False]
 configSettingIsScalar :: Setting -> IO Bool
 configSettingIsScalar =
   fmap (`elem` [IntType, Int64Type, FloatType, BoolType, StringType]) .
   configSettingType
 
+-- |
+-- >>> Just list <- configLookup conf "application.list"
+-- >>> configSettingName list
+-- Just "list"
+--
+-- >>> Just list1 <- configLookup conf "application.list.[0]"
+-- >>> configSettingName list1
+-- Nothing
 configSettingName :: Setting -> IO (Maybe String)
 configSettingName (Setting sp) = do
   s <- peek sp
@@ -622,38 +934,78 @@ configSettingName (Setting sp) = do
     then return Nothing
     else Just <$> peekCString (name'Setting s)
 
+-- |
+-- >>> Just list <- configLookup conf "application.list"
+-- >>> Just app <- configSettingParent list
+-- >>> configSettingName app
+-- Just "application"
 configSettingParent :: Setting -> IO (Maybe Setting)
 configSettingParent = fmap (checkSetting . parent'Setting) . peek . getSetting
 
+-- |
+-- >>> configSettingIsRoot app
+-- False
+-- >>> Just root <- configRootSetting conf
+-- >>> configSettingIsRoot root
+-- True
 configSettingIsRoot :: Setting -> IO Bool
 configSettingIsRoot = fmap ((==nullPtr) . parent'Setting) . peek . getSetting
 
+-- |
+-- >>> Just root <- configRootSetting conf
+-- >>> Just version <- configSettingGetMember root "version"
+-- >>> configSettingGetString version
+-- "1.0"
 configRootSetting :: Configuration -> IO (Maybe Setting)
 configRootSetting =
   flip withForeignPtr (fmap (checkSetting . root'Config) . peek) . getConfiguration
 
+-- |
+-- >>> configGetDefaultFormat conf'
+-- DefaultFormat
+-- >>> configSetDefaultFormat conf' HexFormat
+-- >>> configGetDefaultFormat conf'
+-- HexFormat
 configSetDefaultFormat :: Configuration -> ConfigFormat -> IO ()
 configSetDefaultFormat c' f =
   modifyConfiguration c' $
   \c -> c { default_format'Config = fromIntegral $ fromEnum f }
 
+-- |
+-- >>> configGetDefaultFormat conf
+-- DefaultFormat
 configGetDefaultFormat :: Configuration -> IO ConfigFormat
 configGetDefaultFormat =
   onConfiguration (toEnum . fromIntegral . default_format'Config)
 
+-- |
+-- >>> configGetTabWidth conf'
+-- 2
+-- >>> configSetTabWidth conf' 8
+-- >>> configGetTabWidth conf'
+-- 8
 configSetTabWidth :: Configuration -> Int -> IO ()
 configSetTabWidth c' w =
   modifyConfiguration c' $
   \c -> c { tab_width'Config = fromIntegral w }
 
+-- |
+-- >>> configGetTabWidth conf
+-- 2
 configGetTabWidth :: Configuration -> IO Int
 configGetTabWidth =
   onConfiguration (fromIntegral . tab_width'Config)
 
+-- |
+-- >>> configSettingSourceLine app
+-- 5
 configSettingSourceLine :: Setting -> IO Int
 configSettingSourceLine =
   fmap (fromIntegral . line'Setting) . peek . getSetting
 
+-- |
+-- >>> configSettingSourceFile app
+-- "test/test.conf"
 configSettingSourceFile :: Setting -> IO String
 configSettingSourceFile (Setting s) = peek s >>= peekCString . file'Setting
 
