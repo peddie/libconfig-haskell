@@ -65,7 +65,7 @@ module Language.Libconfig (
   , configSettingGetString
     -- * Setting of primitives
 
-    -- | These functions return a value of type 'Maybe ()', indicating
+    -- | These functions return a value of type 'Maybe' @()@, indicating
     -- whether the action was successful.  (It may fail if, for
     -- example, there is a setting type mismatch.)
   , configSettingSetInt
