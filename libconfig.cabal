@@ -5,9 +5,6 @@ description:
             Low-level FFI bindings to the <http://www.hyperrealm.com/libconfig/ libconfig>
             configuration file library.
             .
-            This binding is very low-level at the moment, but higher-level safe
-            interfaces are planned.
-            .
             This library only binds to version 1.4.9 of the libconfig
             library, which is known as @libconfig9@ in Debian-like
             distributions, including Ubuntu.  It will not work with
