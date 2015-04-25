@@ -39,11 +39,16 @@ flag prisms
      default:         True
 
 flag binary
-     description:     Provide instances for Data.Binary.Binary from the @binary@ package
+     description:     Provide instances for Data.Binary.Binary from
+                      the @binary@ package.  This is done by Generics
+                      and will not work on GHCs older than 7.8,
+                      because they are pinned to binary version 0.5 or
+                      older.
      default:         True
 
 flag cereal
-     description:     Provide instances for Data.Serialize.Serialize from the @cereal@ package
+     description:     Provide instances for Data.Serialize.Serialize
+                      from the @cereal@ package
      default:         True
 
 library
