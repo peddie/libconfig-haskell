@@ -95,7 +95,10 @@ decodeSetting s = liftIO (C.configSettingType s) >>= go
 -- >>> decode conf
 -- Just ["version" := Scalar (String "1.0"),"application" := Group ["window" := Group ["title" := Scalar (String "My Application"),"size" := Group ["w" := Scalar (Integer 640),"h" := Scalar (Integer 480)],"pos" := Group ["x" := Scalar (Integer 350),"y" := Scalar (Integer 250)]],"list" := List [List [Scalar (String "abc"),Scalar (Integer 123),Scalar (Boolean True)],Scalar (Float 1.234),List []],"books" := List [Group ["title" := Scalar (String "Treasure Island"),"author" := Scalar (String "Robert Louis Stevenson"),"price" := Scalar (Float 29.95),"qty" := Scalar (Integer 5)],Group ["title" := Scalar (String "Snow Crash"),"author" := Scalar (String "Neal Stephenson"),"price" := Scalar (Float 9.99),"qty" := Scalar (Integer 8)]],"misc" := Group ["pi" := Scalar (Float 3.141592654),"bigint" := Scalar (Integer64 9223372036854775807),"columns" := Array [String "Last Name",String "First Name",String "MI"],"bitmask" := Scalar (Integer 8131)]]]
 decode :: C.Configuration -> IO (Maybe Group)
-decode c = runMaybeT $ MaybeT (C.configRootSetting c) >>= toGroup
+decode c = do
+  res <- runMaybeT $ MaybeT (C.configRootSetting c) >>= toGroup
+  C.touchConfiguration c
+  return res
 
 -- | Load the libconfig configuration file at the given path and try
 -- to convert it to a top-level 'Group' of 'Setting's.

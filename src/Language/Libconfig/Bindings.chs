@@ -38,6 +38,7 @@ module Language.Libconfig.Bindings (
     -- * Resource management
   , configInit
   , configNew
+  , touchConfiguration
     -- * Config I/O
   , configReadFile
   , configWriteFile
@@ -458,6 +459,15 @@ modifyConfiguration :: Configuration -> (Config -> Config) -> IO ()
 modifyConfiguration (Configuration p) mf = withForeignPtr p $ \cp -> do
   c <- peek cp
   poke cp $ mf c
+
+-- |
+-- @libconfig@ manages storage for all 'Setting' objects via the
+-- 'Configuration', so if a 'Configuration' goes out of scope, GHC may
+-- get rid of it, and any 'Setting' objects may become invalid.  This
+-- function can be used to ensure that a 'Configuration' doesn't get
+-- automatically garbage-collected too early.
+touchConfiguration :: Configuration -> IO ()
+touchConfiguration = touchForeignPtr . getConfiguration
 
 onConfiguration :: (Config -> a) -> Configuration -> IO a
 onConfiguration f = flip withConfiguration (fmap f . peek)
