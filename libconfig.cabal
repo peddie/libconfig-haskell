@@ -13,6 +13,11 @@ description:
             distributions, including Ubuntu.  It will not work with
             older versions of libconfig, including the @libconfig8@
             distributed in Ubuntu 12.04.
+            .
+            See below for several flags you can use to reduce
+            dependencies if this is a problem for you.  If you disable
+            everything, this package will only depend on
+            @transformers@, @text@, @hashable@ and @deepseq@.
 
 license:             BSD3
 license-file:        LICENSE
@@ -28,27 +33,27 @@ source-repository head
   location:       git@github.com/peddie/libconfig-haskell
 
 flag prisms
-     description:     Build prisms along with lenses (adds a dependency on @profunctors@).
+     description:     Build prisms along with lenses (adds a
+                      dependency on the 'profunctors' package).
                       .
-                      If tests are enabled, this also adds a
-                      dependency on @lens@ for the test suite.
+                      If tests are enabled, this flag also adds a
+                      dependency on 'lens' for the test suite.
                       .
-                      If this flag is disabled, no lens tests will be
-                      run.  This is suboptimal but simpler than adding
-                      another cabal flag.
+                      If this flag is disabled, no tests for
+                      Language.Libconfig.Optics will be run at all.
      default:         True
 
 flag binary
      description:     Provide instances for Data.Binary.Binary from
-                      the @binary@ package.  This is done by Generics
+                      the 'binary' package.  This is done by Generics
                       and will not work on GHCs older than 7.8,
-                      because they are pinned to binary version 0.5 or
+                      because they ship with binary version 0.5 or
                       older.
      default:         True
 
 flag cereal
      description:     Provide instances for Data.Serialize.Serialize
-                      from the @cereal@ package
+                      from the 'cereal' package.
      default:         True
 
 library
