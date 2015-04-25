@@ -176,7 +176,7 @@ instance Serialize Value
 instance Serialize Scalar
 #endif
 
--- | libconfig 'Array's can contain any number 'Scalar' values.
+-- | libconfig 'Array's can contain any number of 'Scalar' values.
 type Array = [Scalar]
 
 -- | libconfig 'List's can contain any number of 'Value's.
