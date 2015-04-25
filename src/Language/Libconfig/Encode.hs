@@ -98,31 +98,31 @@ setValue sp (List l)   = mapM_ (addValue sp) l
 -- | Convert a top-level 'Group' of 'Setting's into a native
 -- 'C.Configuration'.  This allocates a new 'C.Configuration'.
 --
--- >>> Just conf <- runMaybeT $ encode test
+-- >>> Just conf <- encode test
 -- >>> C.configWriteFile conf "/tmp/encode_output_test.conf"
 -- Just ()
 -- >>> Just newconf <- C.configNew "/tmp/encode_output_test.conf"
-encode :: Group -> MaybeT IO C.Configuration
-encode g = do
+encode :: Group -> IO (Maybe C.Configuration)
+encode g = runMaybeT $ do
   conf <- liftIO C.configInit
-  encodeAt conf g
+  MaybeT $ encodeAt conf g
   return conf
 
 -- | Convert a top-level 'Group' of 'Setting's into a native
 -- libconfig structure and output it to the specified file path.
 --
--- >>> runMaybeT $ encodeTo test "/tmp/encode_output_test_2.conf"
+-- >>> encodeTo test "/tmp/encode_output_test_2.conf"
 -- Just ()
 -- >>> Just newconf <- C.configNew "/tmp/encode_output_test.conf"
-encodeTo :: Group -> String -> MaybeT IO ()
-encodeTo g filename = do
-  c <- encode g
+encodeTo :: Group -> String -> IO (Maybe ())
+encodeTo g filename = runMaybeT $ do
+  c <- MaybeT $ encode g
   MaybeT $ C.configWriteFile c filename
 
 -- | Encode a top-level 'Group' of 'Setting's and write them to the
 -- specified 'C.Configuration'.
-encodeAt :: C.Configuration -> Group -> MaybeT IO ()
-encodeAt conf g = do
+encodeAt :: C.Configuration -> Group -> IO (Maybe ())
+encodeAt conf g = runMaybeT $ do
   root <- MaybeT $ C.configRootSetting conf
   setValue root (Group g)
 
@@ -139,8 +139,8 @@ removeKids sp = do
 -- | Set the value of the given 'C.Setting' to the provided 'Value'
 -- (recursively).  If this 'C.Setting' is of a collection type, any
 -- pre-existing children will be removed.
-encodeValue :: C.Setting -> Value -> MaybeT IO ()
-encodeValue sp v = do
+encodeValue :: C.Setting -> Value -> IO (Maybe ())
+encodeValue sp v = runMaybeT $ do
   checkType sp (valueType v)
   removeKids sp
   setValue sp v
