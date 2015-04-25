@@ -8,4 +8,13 @@ libconfig-haskell
 Bindings to the [libconfig](http://www.hyperrealm.com/libconfig/)
 library.
 
-Currently a work in progress.
+Please see the documentation [on
+hackage](https://hackage.haskell.org/package/libconfig) and the
+[libconfig user
+manual](http://www.hyperrealm.com/libconfig/libconfig_manual.html) for
+more information.
+
+This library only binds to version 1.4.9 of the libconfig library,
+which is known as libconfig9 in Debian-like distributions, including
+Ubuntu. It will not work with older versions of libconfig, including
+the libconfig8 distributed in Ubuntu 12.04.

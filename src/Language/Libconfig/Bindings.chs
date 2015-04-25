@@ -251,6 +251,7 @@ isCollectionType _         = False
 --
 -- >>> isScalarType FloatType
 -- True
+--
 -- >>> isScalarType ListType
 -- False
 --

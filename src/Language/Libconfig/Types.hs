@@ -100,6 +100,7 @@ data Value = Scalar !Scalar
 -- |
 -- >>> isScalar $ Scalar (String "butts")
 -- True
+--
 -- >>> isScalar $ Array [String "butts"]
 -- False
 isScalar :: Value -> Bool
@@ -110,6 +111,7 @@ isScalar _          = False
 --
 -- >>> isCollection $ Scalar (String "butts")
 -- False
+--
 -- >>> isCollection $ Array [String "butts"]
 -- True
 isCollection :: Value -> Bool
@@ -118,6 +120,7 @@ isCollection = not . isScalar
 -- |
 -- >>> isArray $ Array [String "butts"]
 -- True
+--
 -- >>> isArray $ List [Scalar $ String "butts"]
 -- False
 isArray :: Value -> Bool
@@ -127,6 +130,7 @@ isArray _          = False
 -- |
 -- >>> isList $ Array [String "butts"]
 -- False
+--
 -- >>> isList $ List [Scalar $ String "butts"]
 -- True
 isList :: Value -> Bool
@@ -136,6 +140,7 @@ isList _          = False
 -- |
 -- >>> isGroup $ Array [String "butts"]
 -- False
+--
 -- >>> isGroup $ Group ["asset" := Scalar (String "butts")]
 -- True
 isGroup :: Value -> Bool
@@ -160,15 +165,15 @@ instance Hashable Scalar where
 instance NFData Scalar where
 
 #ifdef BINARY_INSTANCES
-instance Binary Setting where
-instance Binary Value where
-instance Binary Scalar where
+instance Binary Setting
+instance Binary Value
+instance Binary Scalar
 #endif
 
 #ifdef CEREAL_INSTANCES
-instance Serialize Setting where
-instance Serialize Value where
-instance Serialize Scalar where
+instance Serialize Setting
+instance Serialize Value
+instance Serialize Scalar
 #endif
 
 -- | libconfig 'Array's can contain any number 'Scalar' values.

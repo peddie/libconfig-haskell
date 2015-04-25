@@ -131,8 +131,6 @@ prism bt seta = dimap seta (either pure (fmap bt)) . right'
 -- >>> ("asset" := Scalar (String "butts")) & settingValue . _Scalar . _String .~ "money"
 -- "asset" := Scalar (String "money")
 --
--- It also can be turned around to obtain the embedding into the 'Scalar' part of a 'Value':
---
 -- >>> _Scalar # String "butts"
 -- Scalar (String "butts")
 _Scalar :: Prism' Value Scalar

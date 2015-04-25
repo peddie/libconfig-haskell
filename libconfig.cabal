@@ -30,7 +30,6 @@ source-repository head
 flag prisms
      description:     Build prisms along with lenses (adds a dependency on @profunctors@).
                       .
-
                       If tests are enabled, this also adds a
                       dependency on @lens@ for the test suite.
                       .
