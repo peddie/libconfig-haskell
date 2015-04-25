@@ -5,8 +5,8 @@ env:
  - CABALVER=1.18 GHCVER=7.8.4
  - CABALVER=1.22 GHCVER=7.8.4
  - CABALVER=1.22 GHCVER=7.10.1
- - CABALVER=head GHCVER=head
  - HASKELL_PLATFORM_VER=2014.2.0.0
+ - CABALVER=head GHCVER=head
 
 matrix:
   allow_failures:
@@ -62,7 +62,7 @@ install:
  # all the Travis vms.
 
  # - cabal install c2hs
- - cabal install -j3 --only-dependencies --enable-tests --enable-benchmarks -fexamples
+ - cabal install -j3 --only-dependencies --enable-tests --enable-benchmarks -fbinary -fcereal -fprisms
 
 script:
   - if [ -f configure.ac ]; then autoreconf -i; fi
