@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 
 {-|
-Module      :  Language.Libconfig
+Module      :  Language.Libconfig.Bindings
 Copyright   :  (c) Matthew Peddie 2014
 License     :  BSD3
 
@@ -23,7 +23,7 @@ functions.
 
 -}
 
-module Language.Libconfig (
+module Language.Libconfig.Bindings (
   -- * Doctest example setup
 
   -- $setup
@@ -32,6 +32,8 @@ module Language.Libconfig (
   , Setting
   , ConfigErr(..)
   , ConfigType(..)
+  , isCollectionType
+  , isScalarType
   , ConfigFormat(..)
     -- * Resource management
   , configInit
@@ -160,8 +162,46 @@ import Control.Applicative
 -- $setup
 --
 -- All the examples run on the included test file @test/test.conf@,
--- which is provided in the
+-- which is reproduced here from the
 -- <http://www.hyperrealm.com/libconfig/libconfig_manual.html#Configuration-Files libconfig manual>.
+--
+-- @
+--      # Example application configuration file
+--
+--      version = "1.0";
+--
+--      application:
+--      {
+--        window:
+--        {
+--          title = "My Application";
+--          size = { w = 640; h = 480; };
+--          pos = { x = 350; y = 250; };
+--        };
+--
+--        list = ( ( "abc", 123, true ), 1.234, ( /* an empty list */) );
+--
+--        books = ( { title  = "Treasure Island";
+--                    author = "Robert Louis Stevenson";
+--                    price  = 29.95;
+--                    qty    = 5; },
+--                  { title  = "Snow Crash";
+--                    author = "Neal Stephenson";
+--                    price  = 9.99;
+--                    qty    = 8; } );
+--
+--        misc:
+--        {
+--          pi = 3.141592654;
+--          bigint = 9223372036854775807L;
+--          columns = [ "Last Name", "First Name", "MI" ];
+--          bitmask = 0x1FC3;
+--        };
+--      };
+-- @
+--
+-- The following setup actions are assumed for many of the usage
+-- examples below.
 --
 -- >>> Just conf <- configNew "test/test.conf"
 -- >>> Just app <- configLookup conf "application"
@@ -171,6 +211,7 @@ import Control.Applicative
 -- @conf'@ is used for modifying values.
 --
 -- >>> Just conf' <- configNew "test/test.conf"
+--
 
 #include <libconfig.h>
 
@@ -191,6 +232,35 @@ data ConfigType = NoneType
                 | ArrayType
                 | ListType
                 deriving (Eq, Show, Read, Ord, Enum, Bounded)
+
+-- | Tells whether a 'ConfigType' value is a collection ('ListType',
+-- 'ArrayType' or 'GroupType').
+--
+-- >>> isCollectionType GroupType
+-- True
+-- >>> isCollectionType BoolType
+-- False
+isCollectionType :: ConfigType -> Bool
+isCollectionType ArrayType = True
+isCollectionType ListType  = True
+isCollectionType GroupType = True
+isCollectionType _         = False
+
+-- | Tells whether a 'ConfigType' value is a scalar (i.e. not a
+-- collection).
+--
+-- >>> isScalarType FloatType
+-- True
+-- >>> isScalarType ListType
+-- False
+--
+-- __Note:__
+--
+-- >>> isScalarType NoneType
+-- True
+isScalarType :: ConfigType -> Bool
+isScalarType = not . isCollectionType
+
 
 fromEnumIntegral :: (Enum c, Integral a) => c -> a
 fromEnumIntegral = fromIntegral . fromEnum
