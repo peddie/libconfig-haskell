@@ -24,7 +24,10 @@ module Language.Libconfig.Types (
   -- $setup
 
   -- * Primitive types
-  Setting(..)
+  Name
+  , nameToText
+  , textToName
+  , Setting(..)
   , getSettingName
   , getSettingValue
   , Value(..)
@@ -50,9 +53,15 @@ import GHC.Generics (Generic)
 import Data.Data (Data)
 import Data.Typeable (Typeable)
 
-import Data.Text (Text)
 import Data.Hashable (Hashable)
 import Control.DeepSeq (NFData)
+
+import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Monoid ((<>))
+
+import Control.Monad (guard)
+import Data.Maybe (isJust)
 
 #ifdef BINARY_INSTANCES
 import Data.Binary (Binary)
@@ -73,21 +82,74 @@ import Data.Word (Word32, Word64)
 --
 -- >>> :set -XOverloadedStrings
 
+
+-- | A @libconfig@ 'Name' is a string of restricted form.  It must
+-- match the regular expression @[A-Za-z\*][-A-Za-z0-9_\*]*@.
+newtype Name = Name { getName :: Text }
+             deriving (Eq, Ord, Data, Typeable, Generic)
+
+instance Show Name where
+  show (Name text) = show text
+
+instance Read Name where
+  readsPrec p str = do
+    (x, moar) <- readsPrec p str
+    guard (isJust $ textToName x)
+    return (Name x, moar)
+
+instance Hashable Name
+instance NFData Name
+
+-- | Convert a 'Text' string to a 'Name'.
+--
+-- >>> textToName "robert"
+-- Just "robert"
+--
+-- >>> textToName "Obi-wan"
+-- Just "Obi-wan"
+--
+-- If the given string does not match the restrictions on the form of
+-- 'Name's, then 'Nothing' is returned.
+--
+-- >>> textToName ""
+-- Nothing
+--
+-- >>> textToName "0bi-wan"
+-- Nothing
+textToName :: Text -> Maybe Name
+textToName t
+  | t == T.empty = Nothing
+  | hd `T.isInfixOf` nameFirstLetters &&
+    T.all (\c -> T.singleton c `T.isInfixOf` nameLetters) tl = Just $ Name t
+  | otherwise = Nothing
+  where
+    (hd, tl) = T.splitAt 1 t
+    nameFirstLetters = T.pack $ ['a'..'z'] ++ ['A'..'Z'] ++ ['*']
+    nameLetters = nameFirstLetters <> T.pack ('_' : '-' : ['0'..'9'])
+
+-- | Convert a 'Name' to 'Text'
+--
+-- >>> let Just robert = textToName "robert"
+-- >>> nameToText robert
+-- "robert"
+nameToText :: Name -> Text
+nameToText = getName
+
 infixr 3 :=
 -- | A @libconfig@ 'Setting' is a name-value pair, @name := value@.
-data Setting = !Text := !Value
+data Setting = !Name := !Value
              deriving (Eq, Show, Read, Ord, Data, Typeable, Generic)
 
+instance Hashable Setting where
+instance NFData Setting where
+
 -- | Get out the name of a 'Setting'
-getSettingName :: Setting -> Text
+getSettingName :: Setting -> Name
 getSettingName (n := _) = n
 
 -- | Get out the value of a 'Setting'
 getSettingValue :: Setting -> Value
 getSettingValue (_ := v) = v
-
-instance Hashable Setting where
-instance NFData Setting where
 
 -- | A libconfig 'Value' is either a 'Scalar' value or some type of
 -- collection.
@@ -96,6 +158,9 @@ data Value = Scalar !Scalar
            | List !List
            | Group !Group
            deriving (Eq, Show, Read, Ord, Data, Typeable, Generic)
+
+instance Hashable Value where
+instance NFData Value where
 
 -- |
 -- >>> isScalar $ Scalar (String "butts")
@@ -141,14 +206,12 @@ isList _          = False
 -- >>> isGroup $ Array [String "butts"]
 -- False
 --
--- >>> isGroup $ Group ["asset" := Scalar (String "butts")]
+-- >>> let Just asset = textToName "asset"
+-- >>> isGroup $ Group [asset := Scalar (String "butts")]
 -- True
 isGroup :: Value -> Bool
 isGroup (Group _) = True
 isGroup _          = False
-
-instance Hashable Value where
-instance NFData Value where
 
 -- | A libconfig 'Scalar' value is a boolean value, a string or one of
 -- an assortment of numeric types.
@@ -165,18 +228,23 @@ instance Hashable Scalar where
 instance NFData Scalar where
 
 #ifdef BINARY_INSTANCES
+instance Binary Name
 instance Binary Setting
 instance Binary Value
 instance Binary Scalar
 #endif
 
 #ifdef CEREAL_INSTANCES
+instance Serialize Name
 instance Serialize Setting
 instance Serialize Value
 instance Serialize Scalar
 #endif
 
 -- | libconfig 'Array's can contain any number of 'Scalar' values.
+-- These values must be of the same type.  This is currently not
+-- enforced by the data structure, and violating it may lead to
+-- failures to encode.
 type Array = [Scalar]
 
 -- | libconfig 'List's can contain any number of 'Value's.

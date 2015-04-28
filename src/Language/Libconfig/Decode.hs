@@ -92,6 +92,14 @@ catch handler action = do
 
 type Decoder a = ReaderT ConfigFormat (ExceptT DecodeError IO) a
 
+textToNameErr :: Text -> Name
+textToNameErr text =
+  case textToName text of
+   Nothing ->
+     error $ "Language.Libconfig.Decode.textToNameErr: " ++
+     "C library passed an invalid 'Name' value " ++ show text ++ "!"
+   Just x -> x
+
 toScalar :: C.Setting -> Decoder Scalar
 toScalar s = do
   ty <- liftIO $ C.configSettingType s
@@ -197,7 +205,8 @@ decodeSetting s = addParent s $ liftIO (C.configSettingType s) >>= go
     go NoneType = throw $ GetNone ""
     go _ =
       (:=) <$>
-      fmap T.pack (decoder $ (`withErr` Name "") <$> C.configSettingName s) <*>
+      fmap (textToNameErr . T.pack)
+      (decoder $ (`withErr` Name "") <$> C.configSettingName s) <*>
       toValue s
 
 -- | Convert a native 'C.Configuration' into a top-level 'Group' of

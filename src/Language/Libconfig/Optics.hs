@@ -30,6 +30,7 @@ module Language.Libconfig.Optics (
   settingValue
   , settingName
 #ifdef DEFINE_PRISMS
+  , _nameText
     -- * 'Value'
 
     -- |
@@ -90,31 +91,38 @@ type Lens' s a = Lens s s a a
 -- >>> import Control.Lens
 -- >>> :set -XCPP
 -- >>> :set -DDEFINE_PRISMS
+-- >>> let Just asset = textToName "asset"
+-- >>> let Just price = textToName "price"
 #else
 -- $setup
 -- In order to run the usage examples in @ghci@, some setup is required:
 --
 -- >>> :set -XOverloadedStrings
 -- >>> import Control.Lens
+-- >>> let Just asset = textToName "asset"
+-- >>> let Just price = textToName "price"
 #endif
 
 -- |
--- >>> ("asset" := Scalar (String "butts")) ^. settingValue
+-- >>> (asset := Scalar (String "butts")) ^. settingValue
 -- Scalar (String "butts")
 --
--- >>> ("asset" := Scalar (String "butts")) & settingValue .~ Scalar (Float 22.2)
+-- >>> (asset := Scalar (String "butts")) & settingValue .~ Scalar (Float 22.2)
 -- "asset" := Scalar (Float 22.2)
 settingValue :: Lens' Setting Value
 settingValue f (name := value) = fmap (\value' -> name := value') (f value)
 
 -- |
--- >>> ("asset" := Scalar (String "butts")) ^. settingName
+-- >>> (asset := Scalar (String "butts")) ^. settingName
 -- "asset"
 --
--- >>> ("asset" := Scalar (String "butts")) & settingName .~ "shake"
+-- >>> let Just shake = textToName "shake"
+-- >>> (asset := Scalar (String "butts")) & settingName .~ shake
 -- "shake" := Scalar (String "butts")
-settingName :: Lens' Setting Text
+settingName :: Lens' Setting Name
 settingName f (name := value) = fmap (\name' -> name' := value) (f name)
+
+
 
 #ifdef DEFINE_PRISMS
 type Prism s t a b = forall p f. (Choice p, Applicative f) => p a (f b) -> p s (f t)
@@ -125,10 +133,34 @@ prism :: (b -> t) -> (s -> Either t a) -> Prism s t a b
 prism bt seta = dimap seta (either pure (fmap bt)) . right'
 
 -- |
+-- Here is a 'Prism'' for accessing the string value of a 'Name'.
+--
+-- >>> _nameText # asset
+-- "asset"
+--
+-- >>> "butts" ^? _nameText
+-- Just "butts"
+-- >>> :t ("butts" :: Text) ^? _nameText
+-- ("butts" :: Text) ^? _nameText :: Maybe Name
+--
+-- __N.B.__: '_nameText' is partial in the opposite direction to the
+-- usual 'Prism's for sum types (e.g. @_Left@, @_Just@).  This makes
+-- it a bit puzzling to compose.  We use @re _nameText@ with @view@:
+--
+-- >>> (asset := Scalar (String "butts")) ^. settingName . re _nameText
+-- "asset"
+--
+-- I don't know how to get it to compose properly for setting.
+_nameText :: Prism' Text Name
+_nameText = prism nameToText $ \x -> case textToName x of
+                                      Nothing -> Left x
+                                      Just nm -> Right nm
+
+-- |
 -- >>> Scalar (String "butts") ^? _Scalar
 -- Just (String "butts")
 --
--- >>> ("asset" := Scalar (String "butts")) & settingValue . _Scalar . _String .~ "money"
+-- >>> (asset := Scalar (String "butts")) & settingValue . _Scalar . _String .~ "money"
 -- "asset" := Scalar (String "money")
 --
 -- >>> _Scalar # String "butts"
@@ -142,7 +174,7 @@ _Scalar = prism Scalar $ \x -> case x of
 -- >>> Array [String "butts"] ^? _Array
 -- Just [String "butts"]
 --
--- >>> ("asset" := Array [String "butts"]) & settingValue . _Array . traverse . _String .~ "money"
+-- >>> (asset := Array [String "butts"]) & settingValue . _Array . traverse . _String .~ "money"
 -- "asset" := Array [String "money"]
 _Array :: Prism' Value Array
 _Array = prism Array $ \x -> case x of
@@ -150,10 +182,10 @@ _Array = prism Array $ \x -> case x of
                               _         -> Left x
 
 -- |
--- >>> Group ["asset" := Scalar (String "butts"), "price" := Scalar (Float 22.2)] ^? _Group . ix 0
+-- >>> Group [asset := Scalar (String "butts"), price := Scalar (Float 22.2)] ^? _Group . ix 0
 -- Just ("asset" := Scalar (String "butts"))
 --
--- >>> Group ["asset" := Scalar (String "butts"), "price" := Scalar (Float 22.2)] & _Group . traverse . settingValue . _Scalar . _Float %~ (*2)
+-- >>> Group [asset := Scalar (String "butts"), price := Scalar (Float 22.2)] & _Group . traverse . settingValue . _Scalar . _Float %~ (*2)
 -- Group ["asset" := Scalar (String "butts"),"price" := Scalar (Float 44.4)]
 _Group :: Prism' Value Group
 _Group = prism Group $ \x -> case x of
