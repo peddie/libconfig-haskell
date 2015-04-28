@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 {-|
 Module      :  Language.Libconfig.Bindings
@@ -160,6 +162,10 @@ import Foreign.C
 import Control.Monad ((>=>))
 import Control.Applicative
 
+import Data.Data (Data)
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
+
 -- $setup
 --
 -- All the examples run on the included test file @test/test.conf@,
@@ -220,6 +226,7 @@ import Control.Applicative
 -- tries to read in a config file.
 {#enum config_error_t as ConfigErr {underscoreToCase} deriving (Show, Eq) #}
 
+
 -- | This is a set of possible @libconfig@ types.  Many functions will
 -- return 'Nothing' if you attempt to use a value as the incorrect
 -- type.  See the @libconfig@ manual for more details.
@@ -232,7 +239,7 @@ data ConfigType = NoneType
                 | BoolType
                 | ArrayType
                 | ListType
-                deriving (Eq, Show, Read, Ord, Enum, Bounded)
+                deriving (Eq, Show, Read, Ord, Enum, Bounded, Data, Typeable, Generic)
 
 -- | Tells whether a 'ConfigType' value is a collection ('ListType',
 -- 'ArrayType' or 'GroupType').
@@ -275,11 +282,11 @@ toEnumIntegral = toEnum . fromIntegral
 -- and the @libconfig@ manual.
 data ConfigFormat = DefaultFormat
                   | HexFormat
-                  deriving (Eq, Show, Read, Ord, Enum, Bounded)
+                  deriving (Eq, Show, Read, Ord, Enum, Bounded, Data, Typeable, Generic)
 
 data ConfigBool = ConfigFalse
                 | ConfigTrue
-                deriving (Eq, Show, Read, Ord, Enum, Bounded)
+                deriving (Eq, Show, Read, Ord, Enum, Bounded, Data, Typeable, Generic)
 
 {#pointer *config_list_t as ConfigListPtr -> ConfigList #}
 
