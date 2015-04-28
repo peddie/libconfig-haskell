@@ -37,6 +37,13 @@ module Language.Libconfig.Types (
   , isGroup
   , isList
   , Scalar(..)
+  , isBoolean
+  , isInteger
+  , isInteger64
+  , isHex
+  , isHex64
+  , isFloat
+  , isString
     -- * Collection types
   , Array
   , List
@@ -223,6 +230,77 @@ data Scalar = Boolean !Bool
             | Float !Double
             | String !Text
             deriving (Eq, Show, Read, Ord, Data, Typeable, Generic)
+
+-- |
+-- >>> isBoolean $ Boolean True
+-- True
+--
+-- >>> isBoolean $ Float 22.22
+-- False
+isBoolean :: Scalar -> Bool
+isBoolean (Boolean _) = True
+isBoolean _           = False
+
+-- |
+-- >>> isInteger $ Integer 19
+-- True
+--
+-- >>> isInteger $ Float 22.22
+-- False
+isInteger :: Scalar -> Bool
+isInteger (Integer _) = True
+isInteger _           = False
+
+-- |
+-- >>> isInteger64 $ Integer64 22222222222
+-- True
+--
+-- >>> isInteger64 $ Float 22.22
+-- False
+isInteger64 :: Scalar -> Bool
+isInteger64 (Integer64 _) = True
+isInteger64 _           = False
+
+-- |
+-- >>> isHex $ Hex 0x13
+-- True
+--
+-- >>> isHex $ Float 22.22
+-- False
+isHex :: Scalar -> Bool
+isHex (Hex _) = True
+isHex _           = False
+
+
+-- |
+-- >>> isHex64 $ Hex64 0x52c8c338e
+-- True
+--
+-- >>> isHex64 $ Float 22.22
+-- False
+isHex64 :: Scalar -> Bool
+isHex64 (Hex64 _) = True
+isHex64 _           = False
+
+-- |
+-- >>> isFloat $ Float 22.22
+-- True
+--
+-- >>> isFloat $ Integer 19
+-- False
+isFloat :: Scalar -> Bool
+isFloat (Float _) = True
+isFloat _           = False
+
+-- |
+-- >>> isString $ String "BUTTS"
+-- True
+--
+-- >>> isString $ Float 22.22
+-- False
+isString :: Scalar -> Bool
+isString (String _) = True
+isString _           = False
 
 instance Hashable Scalar where
 instance NFData Scalar where
