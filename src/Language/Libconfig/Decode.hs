@@ -1,4 +1,7 @@
 {-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 {-|
 Module      :  Language.Libconfig.Decode
@@ -28,7 +31,13 @@ import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.Reader
 
+import Data.Data (Data)
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
+import Control.DeepSeq (NFData)
+
 import qualified Data.Text as T (pack)
+import Data.Monoid ((<>))
 
 import Language.Libconfig.Types
 import Language.Libconfig.Bindings (ConfigType(..), ConfigFormat(..))
@@ -40,19 +49,19 @@ import qualified Language.Libconfig.Bindings as C
 data DecodeError = Root  -- ^ No root setting was found (possibly this
                          -- configuration is invalid?)
                  | Name {
-                   decodeErrSetting :: C.Setting  -- ^ This setting had no name
-                                                  -- but was in a 'Group'.
+                   decodeErrSetting :: Text  -- ^ This setting had no name
+                                             -- but was in a 'Group'.
                  }
                  | GetNone {
-                   decodeErrSetting :: C.Setting  -- ^ This setting was of type
-                                                  -- 'NoneType', but it should
-                                                  -- have a type.
+                   decodeErrSetting :: Text  -- ^ This setting was of type
+                                             -- 'NoneType', but it should
+                                             -- have a type.
                  }
                  | GetIndex {
-                   decodeErrParent :: C.Setting  -- ^ Failed to get a child of
-                                                 -- this 'C.Setting'
-                 , decodeErrIndex :: Int         -- ^ This was the index we
-                                                 -- tried to look up
+                   decodeErrParent :: Text  -- ^ Failed to get a child of
+                                            -- this 'C.Setting'
+                 , decodeErrIndex :: Int    -- ^ This was the index we
+                                            -- tried to look up
                  }
                  | Parse {
                    decodeErrFilename :: Text    -- ^ The file in which
@@ -64,16 +73,9 @@ data DecodeError = Root  -- ^ No root setting was found (possibly this
                  }
                  | FileIO {
                    decodeErrFilename :: Text    -- ^ Failed to open this file
-                 } deriving (Eq)
+                 } deriving (Eq, Ord, Show, Read, Data, Typeable, Generic)
 
-instance Show DecodeError where
-  show Root = "Root"
-  show (Name _) = "Name <setting>"
-  show (GetNone _) = "GetNone <setting>"
-  show (GetIndex _ i) = "GetNone <setting> " ++ show i
-  show (Parse file line desc) =
-    "Parse " ++ show file ++ " " ++ show line ++ " " ++ show desc
-  show (FileIO file) = "FileIO " ++ show file
+instance NFData DecodeError
 
 withErr :: Maybe a -> e -> Either e a
 withErr Nothing e  = Left e
@@ -84,6 +86,10 @@ decoder = lift . ExceptT
 
 throw :: DecodeError -> Decoder a
 throw = lift . throwE
+
+catch :: (DecodeError -> ExceptT DecodeError IO a) -> Decoder a -> Decoder a
+catch handler action = do
+  ReaderT $ \conf -> catchE (runReaderT action conf) handler
 
 type Decoder a = ReaderT ConfigFormat (ExceptT DecodeError IO) a
 
@@ -116,7 +122,7 @@ toScalar s = do
 toList :: C.Setting -> Decoder List
 toList s = do
   ty <- liftIO $ C.configSettingType s
-  go ty
+  addParent s $ go ty
   where
     go :: ConfigType -> Decoder List
     go ListType = do
@@ -127,11 +133,11 @@ toList s = do
       "a value with 'ListType', but got '" ++ show ty ++ "'!"
     get :: Int -> Decoder Value
     get i = do
-      el <- decoder $ (`withErr` GetIndex s i) <$> C.configSettingGetElem s i
+      el <- decoder $ (`withErr` GetIndex "" i) <$> C.configSettingGetElem s i
       toValue el
 
 toArray :: C.Setting -> Decoder Array
-toArray s = liftIO (C.configSettingType s) >>= go
+toArray s = addParent s $ liftIO (C.configSettingType s) >>= go
   where
     go :: ConfigType -> Decoder Array
     go ArrayType = do
@@ -141,11 +147,11 @@ toArray s = liftIO (C.configSettingType s) >>= go
       error $ "Language.Libconfig.Decode.toArray: internal error (bug!): expected " ++
       "a value with 'ArrayType', but got '" ++ show ty ++ "'!"
     get i = do
-      el <- decoder $ (`withErr` GetIndex s i) <$> C.configSettingGetElem s i
+      el <- decoder $ (`withErr` GetIndex "" i) <$> C.configSettingGetElem s i
       toScalar el
 
 toGroup :: C.Setting -> Decoder Group
-toGroup s = liftIO (C.configSettingType s) >>= go
+toGroup s = addParent s $ liftIO (C.configSettingType s) >>= go
   where
     go :: ConfigType -> Decoder Group
     go GroupType = do
@@ -155,26 +161,44 @@ toGroup s = liftIO (C.configSettingType s) >>= go
       error $ "Language.Libconfig.Decode.toGroup: internal error (bug!): expected " ++
       "a value with 'GroupType', but got '" ++ show ty ++ "'!"
     get i = do
-      el <- decoder $ (`withErr` GetIndex s i) <$> C.configSettingGetElem s i
+      el <- decoder $ (`withErr` GetIndex "" i) <$> C.configSettingGetElem s i
       decodeSetting el
 
 toValue :: C.Setting -> Decoder Value
-toValue s = liftIO (C.configSettingType s) >>= go
+toValue s = addParent s $ liftIO (C.configSettingType s) >>= go
   where
     go :: ConfigType -> Decoder Value
-    go NoneType = throw $ GetNone s
+    go NoneType = throw $ GetNone ""
     go ListType = List <$> toList s
     go ArrayType = Array <$> toArray s
     go GroupType = Group <$> toGroup s
     go _ = Scalar <$> toScalar s
 
-decodeSetting :: C.Setting -> Decoder Setting
-decodeSetting s = liftIO (C.configSettingType s) >>= go
+getName :: C.Setting -> IO Text
+getName s = do
+  name <- C.configSettingName s
+  return $ case name of
+   Nothing -> "<no name>"
+   Just x  -> T.pack x
+
+addParent :: C.Setting -> Decoder a -> Decoder a
+addParent s = catch handler
   where
-    go NoneType = throw $ GetNone s
+    mapSetting _ e@(Parse _ _ _) = e
+    mapSetting _ e@(FileIO _)    = e
+    mapSetting f (GetIndex p i) = GetIndex (f p) i
+    mapSetting f e = e { decodeErrSetting = f (decodeErrSetting e) }
+    handler e = do
+      name <- liftIO $ getName s
+      throwE $ mapSetting ((name <> ".") <>) e
+
+decodeSetting :: C.Setting -> Decoder Setting
+decodeSetting s = addParent s $ liftIO (C.configSettingType s) >>= go
+  where
+    go NoneType = throw $ GetNone ""
     go _ =
       (:=) <$>
-      fmap T.pack (decoder $ (`withErr` Name s) <$> C.configSettingName s) <*>
+      fmap T.pack (decoder $ (`withErr` Name "") <$> C.configSettingName s) <*>
       toValue s
 
 -- | Convert a native 'C.Configuration' into a top-level 'Group' of
