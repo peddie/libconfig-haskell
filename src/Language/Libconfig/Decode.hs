@@ -43,9 +43,8 @@ import Language.Libconfig.Types
 import Language.Libconfig.Bindings (ConfigType(..), ConfigFormat(..))
 import qualified Language.Libconfig.Bindings as C
 
--- TODO(MP): Properly convert integral types depending on the setting
--- format.
-
+-- | Any of these problems can occur while decoding a @libconfig@
+-- 'C.Configuration'.
 data DecodeError = Root  -- ^ No root setting was found (possibly this
                          -- configuration is invalid?)
                  | Name {
@@ -228,13 +227,13 @@ decodeFrom filename = do
   case red of
    Nothing -> do
      ty <- C.configErrorType c
-     fn <- T.pack <$> C.configErrorFile c
+     fn <- maybe (T.pack filename) T.pack <$> C.configErrorFile c
      case ty of
       C.ConfigErrFileIo -> return . Left $ FileIO fn
       C.ConfigErrParse  -> do
         err <- Parse fn <$>
                (fromIntegral <$> C.configErrorLine c) <*>
-               (T.pack <$> C.configErrorText c)
+               (maybe "" T.pack <$> C.configErrorText c)
         return $ Left err
       _               ->
         error "Language.Libconfig.Decode.decodeFrom: something is really broken!"

@@ -1099,15 +1099,23 @@ configSettingSourceLine =
 configSettingSourceFile :: Setting -> IO String
 configSettingSourceFile (Setting s) = peek s >>= peekCString . file'Setting
 
-configErrorFile :: Configuration -> IO String
+configErrorFile :: Configuration -> IO (Maybe String)
 configErrorFile c =
   withConfiguration c $
-  \p -> peek p >>= peekCString . error_file'Config
+  \p -> do
+    filePtr <- error_file'Config <$> peek p
+    if filePtr == nullPtr
+      then return Nothing
+      else Just <$> peekCString filePtr
 
-configErrorText :: Configuration -> IO String
+configErrorText :: Configuration -> IO (Maybe String)
 configErrorText c =
   withConfiguration c $
-  \p -> peek p >>= peekCString . error_text'Config
+  \p -> do
+    textPtr <- error_text'Config <$> peek p
+    if textPtr == nullPtr
+      then return Nothing
+      else Just <$> peekCString textPtr
 
 configErrorLine :: Configuration -> IO Int
 configErrorLine =
