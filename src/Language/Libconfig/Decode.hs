@@ -45,8 +45,8 @@ import qualified Language.Libconfig.Bindings as C
 
 -- | Any of these problems can occur while decoding a @libconfig@
 -- 'C.Configuration'.
-data DecodeError = Root  -- ^ No root setting was found (possibly this
-                         -- configuration is invalid?)
+data DecodeError = DecoderRoot  -- ^ No root setting was found (possibly this
+                                -- configuration is invalid?)
                  | Name {
                    decodeErrSetting :: Text  -- ^ This setting had no name
                                              -- but was in a 'Group'.
@@ -70,7 +70,7 @@ data DecodeError = Root  -- ^ No root setting was found (possibly this
                  , decodeErrDescription :: Text  -- ^ @libconfig@'s description
                                                  -- of the parsing failure
                  }
-                 | FileIO {
+                 | FileInput {
                    decodeErrFilename :: Text    -- ^ Failed to open this file
                  } deriving (Eq, Ord, Show, Read, Data, Typeable, Generic)
 
@@ -181,23 +181,23 @@ toValue s = addParent s $ liftIO (C.configSettingType s) >>= go
     go GroupType = Group <$> toGroup s
     go _ = Scalar <$> toScalar s
 
+addParent :: C.Setting -> Decoder a -> Decoder a
+addParent s = catch handler
+  where
+    mapSetting _ e@(Parse _ _ _) = e
+    mapSetting _ e@(FileInput _)    = e
+    mapSetting f (GetIndex p i) = GetIndex (f p) i
+    mapSetting f e = e { decodeErrSetting = f (decodeErrSetting e) }
+    handler e = do
+      name <- liftIO $ getName s
+      throwE $ mapSetting ((name <> ".") <>) e
+
 getName :: C.Setting -> IO Text
 getName s = do
   name <- C.configSettingName s
   return $ case name of
    Nothing -> "<no name>"
    Just x  -> T.pack x
-
-addParent :: C.Setting -> Decoder a -> Decoder a
-addParent s = catch handler
-  where
-    mapSetting _ e@(Parse _ _ _) = e
-    mapSetting _ e@(FileIO _)    = e
-    mapSetting f (GetIndex p i) = GetIndex (f p) i
-    mapSetting f e = e { decodeErrSetting = f (decodeErrSetting e) }
-    handler e = do
-      name <- liftIO $ getName s
-      throwE $ mapSetting ((name <> ".") <>) e
 
 decodeSetting :: C.Setting -> Decoder Setting
 decodeSetting s = addParent s $ liftIO (C.configSettingType s) >>= go
@@ -222,7 +222,7 @@ decode c = do
   C.touchConfiguration c
   return res
   where
-    getRoot cnf = decoder $ (`withErr` Root) <$> C.configRootSetting cnf
+    getRoot cnf = decoder $ (`withErr` DecoderRoot) <$> C.configRootSetting cnf
 
 -- | Load the libconfig configuration file at the given path and try
 -- to convert it to a top-level 'Group' of 'Setting's.
@@ -238,7 +238,7 @@ decodeFrom filename = do
      ty <- C.configErrorType c
      fn <- maybe (T.pack filename) T.pack <$> C.configErrorFile c
      case ty of
-      C.ConfigErrFileIo -> return . Left $ FileIO fn
+      C.ConfigErrFileIo -> return . Left $ FileInput fn
       C.ConfigErrParse  -> do
         err <- Parse fn <$>
                (fromIntegral <$> C.configErrorLine c) <*>
