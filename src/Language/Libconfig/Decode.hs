@@ -94,7 +94,7 @@ catch handler action =
 type Decoder a = ReaderT ConfigFormat (ExceptT DecodeError IO) a
 
 textToNameErr :: Text -> Name
-textToNameErr text = fromMaybe err . textToName
+textToNameErr text = fromMaybe err $ textToName text
   where
     err = error $ "Language.Libconfig.Decode.textToNameErr: " ++
           "C library passed an invalid 'Name' value " ++ show text ++ "!"
