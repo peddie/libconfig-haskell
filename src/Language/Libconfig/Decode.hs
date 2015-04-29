@@ -87,8 +87,8 @@ decoder = lift . ExceptT
 throw :: DecodeError -> Decoder a
 throw = lift . throwE
 
-catch :: (DecodeError -> ExceptT DecodeError IO a) -> Decoder a -> Decoder a
-catch handler action =
+catchD :: (DecodeError -> ExceptT DecodeError IO a) -> Decoder a -> Decoder a
+catchD handler action =
   ReaderT $ \conf -> catchE (runReaderT action conf) handler
 
 type Decoder a = ReaderT ConfigFormat (ExceptT DecodeError IO) a
@@ -177,7 +177,7 @@ toValue s = addParent s $ liftIO (C.configSettingType s) >>= go
     go _ = Scalar <$> toScalar s
 
 addParent :: C.Setting -> Decoder a -> Decoder a
-addParent s = catch handler
+addParent s = catchD handler
   where
     mapSetting _ e@(Parse{}) = e
     mapSetting _ e@(FileInput _)    = e
