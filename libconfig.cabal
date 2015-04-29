@@ -2,7 +2,8 @@ name:                libconfig
 version:             0.3.0.0
 synopsis:            Haskell bindings to libconfig
 description:
-            Low-level FFI bindings to the <http://www.hyperrealm.com/libconfig/ libconfig>
+            Low-level FFI bindings and a higher-level interface to the
+            <http://www.hyperrealm.com/libconfig/ libconfig>
             configuration file library.
             .
             This library only binds to version 1.4.9 of the libconfig
@@ -14,7 +15,8 @@ description:
             See below for several flags you can use to reduce
             dependencies if this is a problem for you.  If you disable
             everything, this package will only depend on
-            @transformers@, @text@, @hashable@ and @deepseq@.
+            @transformers@, @transformers-compat@, @text@, @hashable@
+            and @deepseq@.
 
 license:             BSD3
 license-file:        LICENSE
