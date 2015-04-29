@@ -73,8 +73,7 @@ script:
   - cabal check
   - cabal sdist
   - cabal haddock
-  # HLint doesn't know what to do with .chs files.
-  # - hlint src --report
+  - hlint src --report
 
   # No examples yet.
   # - hlint examples --report
