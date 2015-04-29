@@ -20,6 +20,7 @@ license:             BSD3
 license-file:        LICENSE
 author:              Matthew Peddie
 maintainer:          mpeddie@gmail.com
+homepage:            https://github.com/peddie/libconfig-haskell
 copyright:           2015 Matthew Peddie <mpeddie@gmail.com>
 category:            Language
 build-type:          Simple
@@ -27,7 +28,7 @@ cabal-version:       >=1.10
 
 source-repository head
   type:           git
-  location:       git@github.com/peddie/libconfig-haskell
+  location:       https://github.com/peddie/libconfig-haskell
 
 flag prisms
      description:     Build prisms along with lenses (adds a
