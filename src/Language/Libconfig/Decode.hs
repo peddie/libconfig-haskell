@@ -37,6 +37,7 @@ import GHC.Generics (Generic)
 import Control.DeepSeq (NFData)
 
 import qualified Data.Text as T (pack)
+import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 
 import Language.Libconfig.Types
@@ -87,18 +88,16 @@ throw :: DecodeError -> Decoder a
 throw = lift . throwE
 
 catch :: (DecodeError -> ExceptT DecodeError IO a) -> Decoder a -> Decoder a
-catch handler action = do
+catch handler action =
   ReaderT $ \conf -> catchE (runReaderT action conf) handler
 
 type Decoder a = ReaderT ConfigFormat (ExceptT DecodeError IO) a
 
 textToNameErr :: Text -> Name
-textToNameErr text =
-  case textToName text of
-   Nothing ->
-     error $ "Language.Libconfig.Decode.textToNameErr: " ++
-     "C library passed an invalid 'Name' value " ++ show text ++ "!"
-   Just x -> x
+textToNameErr text = fromMaybe err . textToName
+  where
+    err = error $ "Language.Libconfig.Decode.textToNameErr: " ++
+          "C library passed an invalid 'Name' value " ++ show text ++ "!"
 
 toScalar :: C.Setting -> Decoder Scalar
 toScalar s = do
@@ -131,7 +130,6 @@ toList s = do
   ty <- liftIO $ C.configSettingType s
   addParent s $ go ty
   where
-    go :: ConfigType -> Decoder List
     go ListType = do
       l <- liftIO $ C.configSettingLength s
       mapM get [0 .. l - 1]
@@ -146,7 +144,6 @@ toList s = do
 toArray :: C.Setting -> Decoder Array
 toArray s = addParent s $ liftIO (C.configSettingType s) >>= go
   where
-    go :: ConfigType -> Decoder Array
     go ArrayType = do
       l <- liftIO $ C.configSettingLength s
       mapM get [0 .. l - 1]
@@ -160,7 +157,6 @@ toArray s = addParent s $ liftIO (C.configSettingType s) >>= go
 toGroup :: C.Setting -> Decoder Group
 toGroup s = addParent s $ liftIO (C.configSettingType s) >>= go
   where
-    go :: ConfigType -> Decoder Group
     go GroupType = do
       l <- liftIO $ C.configSettingLength s
       mapM get [0 .. l - 1]
@@ -174,7 +170,6 @@ toGroup s = addParent s $ liftIO (C.configSettingType s) >>= go
 toValue :: C.Setting -> Decoder Value
 toValue s = addParent s $ liftIO (C.configSettingType s) >>= go
   where
-    go :: ConfigType -> Decoder Value
     go NoneType = throw $ GetNone ""
     go ListType = List <$> toList s
     go ArrayType = Array <$> toArray s
@@ -184,7 +179,7 @@ toValue s = addParent s $ liftIO (C.configSettingType s) >>= go
 addParent :: C.Setting -> Decoder a -> Decoder a
 addParent s = catch handler
   where
-    mapSetting _ e@(Parse _ _ _) = e
+    mapSetting _ e@(Parse{}) = e
     mapSetting _ e@(FileInput _)    = e
     mapSetting f (GetIndex p i) = GetIndex (f p) i
     mapSetting f e = e { decodeErrSetting = f (decodeErrSetting e) }

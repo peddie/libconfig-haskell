@@ -159,10 +159,10 @@ setValue :: C.Setting -> Value -> Encoder ()
 setValue sp (Scalar s) = scalarSet sp s
 setValue sp (Group g)  = mapM_ (addSetting sp) g
 setValue sp (List l)   = mapM_ (addValue "" sp) l
-setValue sp (Array a)  = do
+setValue sp (Array a)  =
   if arrayCheck a
-    then mapM_ (addValue "" sp . Scalar) a
-    else throwE $ TypeMismatch ""
+  then mapM_ (addValue "" sp . Scalar) a
+  else throwE $ TypeMismatch ""
 
 -- | Convert a top-level 'Group' of 'Setting's into a native
 -- 'C.Configuration'.  This allocates a new 'C.Configuration'.
@@ -249,10 +249,10 @@ scalarType (String _) = StringType
 
 arrayCheck :: Array -> Bool
 arrayCheck [] = True
-arrayCheck ((Boolean _):arr)   = all isBoolean arr
-arrayCheck ((Integer _):arr)   = all isInteger arr
-arrayCheck ((Integer64 _):arr) = all isInteger64 arr
-arrayCheck ((Hex _):arr)       = all isHex arr
-arrayCheck ((Hex64 _):arr)     = all isHex64 arr
-arrayCheck ((Float _):arr)     = all isFloat arr
-arrayCheck ((String _):arr)    = all isString arr
+arrayCheck (Boolean _:arr)   = all isBoolean arr
+arrayCheck (Integer _:arr)   = all isInteger arr
+arrayCheck (Integer64 _:arr) = all isInteger64 arr
+arrayCheck (Hex _:arr)       = all isHex arr
+arrayCheck (Hex64 _:arr)     = all isHex64 arr
+arrayCheck (Float _:arr)     = all isFloat arr
+arrayCheck (String _:arr)    = all isString arr

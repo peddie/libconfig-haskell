@@ -131,7 +131,7 @@ textToName t
   | otherwise = Nothing
   where
     (hd, tl) = T.splitAt 1 t
-    nameFirstLetters = T.pack $ ['a'..'z'] ++ ['A'..'Z'] ++ ['*']
+    nameFirstLetters = T.pack $ ['a'..'z'] ++ ['A'..'Z'] ++ "*"
     nameLetters = nameFirstLetters <> T.pack ('_' : '-' : ['0'..'9'])
 
 -- | Convert a 'Name' to 'Text'

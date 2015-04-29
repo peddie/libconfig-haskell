@@ -24,13 +24,10 @@ bunch of mutation, you should import the low-level bindings:
 -}
 
 module Language.Libconfig (
-  module Language.Libconfig.Types
-  , module Language.Libconfig.Decode
-  , module Language.Libconfig.Encode
-  , module Language.Libconfig.Optics
+  module L
   ) where
 
-import Language.Libconfig.Types
-import Language.Libconfig.Decode
-import Language.Libconfig.Encode
-import Language.Libconfig.Optics
+import Language.Libconfig.Types as L
+import Language.Libconfig.Decode as L
+import Language.Libconfig.Encode as L
+import Language.Libconfig.Optics as L

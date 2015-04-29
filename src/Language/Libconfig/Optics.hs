@@ -120,7 +120,7 @@ settingValue f (name := value) = fmap (\value' -> name := value') (f value)
 -- >>> (asset := Scalar (String "butts")) & settingName .~ shake
 -- "shake" := Scalar (String "butts")
 settingName :: Lens' Setting Name
-settingName f (name := value) = fmap (\name' -> name' := value) (f name)
+settingName f (name := value) = fmap (:= value) (f name)
 
 
 
