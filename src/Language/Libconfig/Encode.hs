@@ -44,7 +44,7 @@ import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.Except
 import Control.Monad (when, replicateM_)
 
-import qualified Data.Text as T (unpack, pack)
+import qualified Data.Text as T (unpack, pack, empty)
 import Data.Monoid ((<>))
 
 import Language.Libconfig.Types
@@ -113,9 +113,12 @@ addTrace s = flip catchE handler
     mapSetting f (SetIndex p i v) = SetIndex (f p) i v
     mapSetting f (AddSetting p v) = AddSetting (f p) v
     mapSetting f e = e { encodeErrSetting = f (encodeErrSetting e) }
+    repair name path
+      | path == T.empty = name
+      | otherwise       = name <> "." <> path
     handler e = do
       name <- liftIO $ getName s
-      throwE $ mapSetting ((name <> ".") <>) e
+      throwE $ mapSetting (repair name) e
 
 getName :: C.Setting -> IO Text
 getName s = do
@@ -141,9 +144,9 @@ scalarSet sp v = addTrace sp $
       MaybeT $ C.configSettingSetInt64 sp (fromIntegral h)
 
 addValue :: Text -> C.Setting -> Value -> Encoder C.Setting
-addValue nm parent value = addTrace parent $ do
+addValue nm parent value = do
   newset <- ExceptT $ (`withErr` AddSetting "" value) <$> add
-  setValue newset value
+  addTrace newset $ setValue newset value
   return newset
   where
     add = C.configSettingAdd parent (T.unpack nm) (valueType value)
